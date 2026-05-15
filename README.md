@@ -14,6 +14,7 @@ NVIDIA only. CUDA driver **545+** required.
 | Ampere (sm_86) | RTX 30-series, A-series | 3060 Ti, 3070, 3080, 3090, A4000 |
 | Ada (sm_89) | RTX 40-series | 4070, 4080, 4080 SUPER, 4090 |
 | Blackwell (sm_120) | RTX 50-series | 5060 Ti, 5070, 5070 Ti, 5080, 5090 |
+| Hopper (sm_90) | data-center | H100, H200 |
 
 The miner auto-detects GPU architecture. Override with `--force-backend` if needed.
 
