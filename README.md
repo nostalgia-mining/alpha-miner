@@ -81,7 +81,7 @@ Recommended starting values:
 
 ## Performance reference
 
-Single GPU, default PPLNS settings, alpha-miner v1.4.0:
+Single GPU, default PPLNS settings, alpha-miner v1.5.1:
 
 | GPU | TH/s |
 |---|---|
@@ -137,15 +137,15 @@ In HiveOS flight sheet → **Add Custom Miner**:
 
 | Field | Value |
 |---|---|
-| Installation URL | `https://github.com/AlphaMine-Tech/alpha-miner/releases/download/v1.4.0.03/alpha-V1.4.0.03.20260517.tar.gz` |
+| Installation URL | `https://github.com/AlphaMine-Tech/alpha-miner/releases/download/v1.5.1/alpha-V1.5.1.20260521.tar.gz` |
 | Miner Name | `alpha` |
 | Pool URL | `stratum+tcp://us2.alphapool.tech:5566` (comma-separate multiple endpoints for failover) |
 | Wallet and worker template | your `prl1p…` PRL address |
 | Extra config arguments | *(optional)* — see release notes for tunables |
 
-Full HiveOS install details and the 7 wrapper tunables (`FAILOVER_*`, `REPORT_METRIC`, `HSTATS_RAW_LINES`) are in the [v1.4.0.03 release notes](https://github.com/AlphaMine-Tech/alpha-miner/releases/tag/v1.4.0.03).
+Full HiveOS install details and the 7 wrapper tunables (`FAILOVER_*`, `REPORT_METRIC`, `HSTATS_RAW_LINES`) are in the [v1.5.1 release notes](https://github.com/AlphaMine-Tech/alpha-miner/releases/tag/v1.5.1).
 
-**Wrapper-version naming:** HiveOS releases use the pattern `<NAME>-V<VERSION>.<YYYYMMDD>.tar.gz`, where `<VERSION>` = `<alpha-miner binary>.<wrapper rev>` (e.g. `1.4.0.03` = alpha-miner 1.4.0 + wrapper revision 03). Latest releases: see <https://github.com/AlphaMine-Tech/alpha-miner/releases>.
+**Wrapper-version naming:** HiveOS releases use the pattern `<NAME>-V<VERSION>.<YYYYMMDD>.tar.gz`, where `<VERSION>` = `<alpha-miner binary>.<wrapper rev>` (e.g. `1.5.1.03` = alpha-miner 1.5.1 + wrapper revision 03). Latest releases: see <https://github.com/AlphaMine-Tech/alpha-miner/releases>.
 
 ## Docker
 
@@ -158,6 +158,77 @@ docker run --gpus all \
 ```
 
 Required env: `PEARL_ADDRESS`. Optional: `PEARL_WORKER` (default `docker-rig`), `PEARL_POOL_PORT` (default `5566`, use `5567` for SOLO), `PEARL_DIFFICULTY` (static-diff override), `PEARL_DEVICES` (GPU pin).
+
+### Keeping your image current
+
+The `:latest` tag is **not auto-updating** — Docker treats it as just another name. `docker run` / `docker compose up` reuses whatever image you have locally tagged `:latest`, which is whatever you pulled last time. If you pulled before v1.5 dropped, you're still on v1.4 even though the registry has v1.5.
+
+**The pool now requires v1.5+. v1.4 and earlier are rejected server-side.** Make sure you're current.
+
+**Force a re-pull on a running deployment:**
+
+```bash
+docker pull alphaminetech/pearl-miner:latest
+docker stop pearl-miner && docker rm pearl-miner
+# (then re-run the docker run command above)
+```
+
+**Recommended: pin to an explicit version tag** so you always know what's running and don't get silently upgraded mid-run:
+
+```bash
+docker run --gpus all -e PEARL_ADDRESS=... alphaminetech/pearl-miner:1.5.1
+```
+
+Bump the tag manually when a new version drops.
+
+### docker-compose
+
+```yaml
+services:
+  pearl-miner:
+    image: alphaminetech/pearl-miner:1.5.1
+    pull_policy: always           # re-pull on every `up` (compose v2.4+)
+    runtime: nvidia
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    environment:
+      PEARL_ADDRESS: prl1pYOUR_ADDR
+      PEARL_WORKER: rig01
+      PEARL_POOL_HOST: us2.alphapool.tech
+      PEARL_POOL_PORT: 5566
+    restart: unless-stopped
+```
+
+To upgrade:
+
+```bash
+docker compose pull pearl-miner && docker compose up -d --force-recreate pearl-miner
+```
+
+### Salad / Vast.ai container marketplaces
+
+These platforms cache the image when your container group is **created**, not on each container restart. To pick up a new miner version you must **redeploy the container group** (or click Edit → Save in the Salad dashboard) — restarting individual replicas reuses the cached image.
+
+Pinning to an explicit `:1.5.1` tag is doubly important here: redeploying with `:latest` could land you on whatever version is current at the time, which may or may not be the one you tested.
+
+### Verify which version you're actually running
+
+```bash
+docker exec <container_name> alpha-miner --version
+```
+
+Or read it from the startup banner in logs:
+
+```bash
+docker logs <container_name> 2>&1 | head -20 | grep -i version
+```
+
+If it says `alpha-miner 1.4` or earlier → you're stale, pull the new image. `alpha-miner 1.5.1` → you're good.
 
 ## Troubleshooting
 
@@ -177,7 +248,7 @@ Set static difficulty: add `--password 'x;d=32768'` (or higher for fast GPUs). S
 Normal — pool moved to a new block; your in-flight work doesn't count. <1% rejection rate is healthy.
 
 **HiveOS dashboard shows `0 H/s` per-GPU but pool is crediting shares**
-You're on an older wrapper. Upgrade to [v1.4.0.03](https://github.com/AlphaMine-Tech/alpha-miner/releases/tag/v1.4.0.03) — the `h-stats.sh` in that wrapper emits `hs[]` in kH/s units that HiveOS's `sanitize_clamp` accepts.
+You're on an older wrapper. Upgrade to [v1.5.1](https://github.com/AlphaMine-Tech/alpha-miner/releases/tag/v1.5.1) — the `h-stats.sh` in that wrapper emits `hs[]` in kH/s units that HiveOS's `sanitize_clamp` accepts.
 
 ## Support
 
