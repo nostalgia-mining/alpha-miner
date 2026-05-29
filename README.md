@@ -14,7 +14,7 @@ NVIDIA only. CUDA driver **545+** required.
 | Ampere (sm_86) | RTX 30-series, A-series, CMP HX-series | 3060 Ti, 3070, 3080, 3090, A4000, CMP 70HX, 90HX, 170HX, 220HX |
 | Ada (sm_89) | RTX 40-series | 4070, 4080, 4080 SUPER, 4090 |
 | Hopper (sm_90) | data-center | H100, H200 |
-| Blackwell (sm_120) | RTX 50-series, B-series | 5060 Ti, 5070, 5070 Ti, 5080, 5090, B100 (B200 coming soon) |
+| Blackwell (sm_120) | RTX 50-series, B-series | 5060 Ti, 5070, 5070 Ti, 5080, 5090, B100, B200 |
 
 The miner auto-detects GPU architecture. Override with `--force-backend volta|ampere|ada|hopper|blackwell|blackwell-native` if needed.
 
@@ -24,8 +24,11 @@ Use a regional stratum host close to you. **Do not use `pearl.alphapool.tech` as
 
 | Region | Host | Port (PPLNS) | Port (SOLO) |
 |---|---|---|---|
+| US East | `us1.alphapool.tech` | `5566` | `5567` |
 | US West | `us2.alphapool.tech` | `5566` | `5567` |
 | Europe | `eu1.alphapool.tech` | `5566` | `5567` |
+| Europe 2 | `eu2.alphapool.tech` | `5566` | `5567` |
+| Russia / Eurasia | `ru1.alphapool.tech` | `5566` | `5567` |
 | Asia | `sg1.alphapool.tech` | `5566` | `5567` |
 
 ## Quick start (Linux)
@@ -81,18 +84,27 @@ Recommended starting values:
 
 ## Performance reference
 
-Single GPU, default PPLNS settings, alpha-miner v1.6.0:
+Single GPU, default PPLNS settings, alpha-miner v1.7.x:
 
-| GPU | TH/s |
+| GPU | TH/s (v1.7.x) |
 |---|---|
-| RTX 3060 Ti | 40–50 |
-| RTX 3070 | 50–60 |
-| RTX 3090 | ~90 |
-| RTX 4090 | 150–160 |
-| RTX 5080 | 165–170 |
-| RTX 5090 | 300–320 |
-| H100 | 610–620 |
+| RTX 3060 Ti | 60–65 |
+| RTX 3070 | 65–70 |
+| RTX 3090 | 100–110 |
+| RTX 4060 Ti | 65–70 |
+| RTX 4080 | 145–150 |
+| RTX 4080 SUPER | 155–165 |
+| RTX 4090 | 245–255 |
+| RTX 5060 Ti | 75–80 |
+| RTX 5070 Ti | 145–155 |
+| RTX 5080 | 175–185 |
+| RTX 5090 | 350–360 |
+| H100 SXM 80GB | 610–620 |
+| B200 | 750–800 (preliminary) |
 | CMP 100-210 (Volta) | ~70 |
+| A100 | ~131 |
+
+Live, sortable, per-version table with measured + community-submitted numbers: [pearl.alphapool.tech/#hashrates](https://pearl.alphapool.tech/#hashrates)
 
 ## Multi-GPU
 
