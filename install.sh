@@ -20,8 +20,10 @@ sha256sum -c SHA256SUMS --ignore-missing
 
 chmod +x alpha-miner
 
+VER="$(./alpha-miner --version 2>/dev/null | head -1 || true)"
+
 echo
-echo "==> installed at ${INSTALL_DIR}/alpha-miner"
+echo "==> installed ${VER:-alpha-miner} at ${INSTALL_DIR}/alpha-miner"
 echo
 echo "next step: run it (use a regional stratum endpoint — us2 / eu1 / sg1):"
 echo
