@@ -149,7 +149,7 @@ In HiveOS flight sheet → **Add Custom Miner**:
 
 | Field | Value |
 |---|---|
-| Installation URL | `https://github.com/AlphaMine-Tech/alpha-miner/releases/download/v1.7.8/alpha-V1.7.8.20260615.tar.gz` |
+| Installation URL | `https://github.com/AlphaMine-Tech/alpha-miner/releases/download/v1.7.9/alpha-V1.7.9.20260617.tar.gz` |
 | Miner Name | `alpha` |
 | Pool URL | `stratum+tcp://us2.alphapool.tech:5566` (comma-separate multiple endpoints for failover) |
 | Wallet and worker template | your `prl1p…` PRL address |
