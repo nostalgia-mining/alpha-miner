@@ -1,25 +1,57 @@
-# alpha-miner
+# alpha-miner — HiveOS Wrapper Fork
 
-GPU miner for the **Pearl (PRL)** network, via AlphaPool stratum. NVIDIA only, CUDA driver **545+**, **0% dev fee**.
+> **Fork of [AlphaMine-Tech/alpha-miner](https://github.com/AlphaMine-Tech/alpha-miner)**
+> by [nostalgia-mining](https://github.com/nostalgia-mining)
 
-> Binary distribution by permission of the author. Source remains private.
+GPU miner for the **Pearl (PRL)** network via [AlphaPool](https://pearl.alphapool.tech). NVIDIA only, CUDA driver **545+**, **0% dev fee**.
 
-## Hardware
+This fork adds an enhanced HiveOS wrapper with:
 
-Architecture is auto-detected (override with `--force-backend volta|ampere|ada|hopper|blackwell|blackwell-native`):
+- ✅ `--gpu` alias for `--devices` — use either flag to select GPUs
+- ✅ Pool URL driven entirely by the HiveOS **Pool URL** field — no hardcoded endpoints
+- ✅ Difficulty driven entirely by the HiveOS **Password** field — set whatever `x;d=N` you want
+- ✅ On-screen stats table (`alpha-stats.sh`) — per-GPU hashrate, watt, temp, fan, clock, shares
+- ✅ Multi-pool failover via the supervisor (comma-separate pools in the Pool URL field)
+- ✅ No donation feature
 
-| Arch | Cards |
+---
+
+## HiveOS Flight Sheet
+
+| Field | Value |
 |---|---|
-| Volta (sm_70) | V100, CMP 100-210 |
-| Ampere (sm_86) | RTX 30-series, A-series, CMP HX |
-| Ada (sm_89) | RTX 40-series (incl. 4060 Ti, 4080 SUPER) |
-| Hopper (sm_90) | H100, H200 |
-| Blackwell (sm_120) | RTX 50-series, B100/B200 |
+| Installation URL | `https://github.com/nostalgia-mining/alpha-miner/releases/download/v1.8.3-hiveos/alpha-V1.8.3-hiveos-wrapper.tar.gz` |
+| Miner name | `alpha` |
+| Hash algorithm | `pearlhash` |
+| Wallet template | `%WAL%.%WORKER_NAME%` |
+| Pool URL | `stratum+tcp://us1.alphapool.tech:5566` *(or any region, comma-separate for failover)* |
+| Password | `x;d=524288` *(or any difficulty value you prefer)* |
 
-## Pool endpoints
+### Extra config arguments (all optional)
 
-Pick the closest region. **PPLNS = port `5566`, SOLO = port `5567`.**
-**Never use `pearl.alphapool.tech` as the stratum host** — it's HTTPS/Cloudflare (dashboard, downloads, API), not stratum TCP.
+| Argument | Description |
+|---|---|
+| `--gpu 0,1` | Select GPUs by CUDA index (alias for `--devices`) |
+| `--devices 0,1` | Native alpha-miner GPU selection — same effect as `--gpu` |
+| `--nostats` | Disable the on-screen stats helper |
+| `--force-backend ada` | Override GPU arch auto-detection |
+| `FAILOVER_GRACE_SEC=120` | Seconds before failover check begins (default 120) |
+| `FAILOVER_DEAD_SEC=240` | Seconds with no share before pool is declared dead (default 240) |
+| `FAILOVER_RETURN_SEC=1800` | Seconds before retrying primary pool (default 1800) |
+| `HSTATS_RAW_LINES=6000` | Log lines scanned for stats (default 6000) |
+
+> **Note on `--gpu` vs `--devices`:** Both flags accept the same comma-separated CUDA indices.  
+> `--gpu` is a wrapper alias that gets translated to `--devices` before being passed to the binary.  
+> You can use either — they are interchangeable.
+
+> **Note on Password / difficulty:** The HiveOS Password field is passed directly to the miner as `--password`.  
+> Set it to `x;d=262144`, `x;d=524288`, or any value you prefer. Leave it empty to use vardiff.
+
+---
+
+## Pool endpoints (AlphaPool)
+
+**PPLNS = port `5566` · SOLO = port `5567`**
 
 | Region | Host |
 |---|---|
@@ -31,99 +63,50 @@ Pick the closest region. **PPLNS = port `5566`, SOLO = port `5567`.**
 | India | `in1.alphapool.tech` |
 | Asia (Singapore) | `sg1.alphapool.tech` |
 
-## Quick start (Linux)
+---
+
+## Wrapper file overview
+
+```
+alpha/
+├── alpha                  ← miner binary (not in repo — downloaded via Installation URL)
+├── h-manifest.conf        ← miner name, version, paths, API port
+├── h-config.sh            ← flight-sheet → miner.conf translation
+├── h-run.sh               ← GPU validation, stats helper launch, → supervisor
+├── h-stats.sh             ← HiveOS dashboard JSON (kH/s per GPU, shares, temp/fan)
+├── alpha-supervise.sh     ← multi-pool failover supervisor (long-lived process)
+├── alpha-stats.sh         ← on-screen stats table (printed every 3 min)
+└── miner.conf             ← generated at runtime by h-config.sh
+```
+
+---
+
+## Quick start (Linux, no HiveOS)
 
 ```bash
 curl -L -o alpha-miner https://github.com/AlphaMine-Tech/alpha-miner/releases/latest/download/alpha-miner
 chmod +x alpha-miner
-curl -L https://github.com/AlphaMine-Tech/alpha-miner/releases/latest/download/SHA256SUMS | sha256sum -c   # optional
-./alpha-miner --pool stratum+tcp://us2.alphapool.tech:5566 --address prl1pYOURADDRESS --worker myrig
+./alpha-miner --pool stratum+tcp://us1.alphapool.tech:5566 \
+              --address prl1YOUR_ADDRESS \
+              --worker rig01 \
+              --password 'x;d=524288'
 ```
 
-Keep the run command on **one line** — `\` continuations can mangle in some terminals and abort the miner with `unknown argument: " "`.
+---
 
-## Options
+## Hardware
 
-| Flag | Purpose |
+| Arch | Cards |
 |---|---|
-| `--pool HOST:PORT` | Pool endpoint (or `stratum+tcp://HOST:PORT`) |
-| `--address prl1p...` | Pearl payout address (required) |
-| `--worker NAME` | Worker label (reported as `ADDRESS.WORKER`) |
-| `--password 'x;d=N'` | Static difficulty (see below) |
-| `--devices 0,1,2` | Mine on specific CUDA devices |
-| `--list-devices` | List GPUs and exit |
-| `--force-backend ...` | Override arch auto-detect |
-| `--version` / `help` | Print version / full flag list |
+| Volta (sm_70) | V100, CMP 100-210 |
+| Ampere (sm_86) | RTX 30-series, A-series, CMP HX |
+| Ada (sm_89) | RTX 40-series |
+| Hopper (sm_90) | H100, H200 |
+| Blackwell (sm_120) | RTX 50-series, B100/B200 |
 
-## Static difficulty
-
-Vardiff works out of the box. For multi-GPU rigs or reconnecting wrappers (HiveOS, vast.ai), pin difficulty in the password field:
-
-```bash
-./alpha-miner --pool stratum+tcp://us2.alphapool.tech:5566 --address prl1p... --worker myrig --password 'x;d=65536'
-```
-
-## Multi-GPU
-
-One process drives all GPUs. Pin specific cards with `--devices 0,1,2`. For per-GPU worker names on the pool, run one process per GPU, each with a unique `--worker`.
-
-## HiveOS
-
-Flight sheet → **Add Custom Miner**:
-
-| Field | Value |
-|---|---|
-| Installation URL | `https://github.com/AlphaMine-Tech/alpha-miner/releases/download/v1.7.9/alpha-V1.7.9.20260617.tar.gz` |
-| Miner Name | `alpha` |
-| Pool URL | `stratum+tcp://us2.alphapool.tech:5566` (comma-separate hosts for failover) |
-| Wallet template | your `prl1p…` PRL address |
-
-The wrapper handles multi-pool failover and per-GPU dashboard stats out of the box.
-
-## Docker
-
-```bash
-docker run --gpus all -e PEARL_ADDRESS=prl1pYOUR_ADDR -e PEARL_POOL_HOST=us2.alphapool.tech alphaminetech/pearl-miner:latest
-```
-
-Env: `PEARL_ADDRESS` (required), `PEARL_WORKER` (default `docker-rig`), `PEARL_POOL_PORT` (`5566`, or `5567` for SOLO), `PEARL_DIFFICULTY`, `PEARL_DEVICES`.
-
-`:latest` is **not** auto-updating — run `docker pull alphaminetech/pearl-miner:latest` to refresh, or pin an explicit tag (e.g. `:1.7.9`). Cloud marketplaces (Salad, Vast.ai) cache the image at deploy — **redeploy the group** to pick up a new version. Check what's running: `docker exec <container> alpha-miner --version`.
-
-## systemd (Linux)
-
-```ini
-# /etc/systemd/system/alpha-miner.service
-[Unit]
-After=network-online.target
-[Service]
-ExecStart=/usr/local/bin/alpha-miner --pool stratum+tcp://us2.alphapool.tech:5566 --address prl1p... --worker mybox --password 'x;d=32768'
-Restart=on-failure
-RestartSec=10
-[Install]
-WantedBy=multi-user.target
-```
-
-```bash
-sudo install -m 755 alpha-miner /usr/local/bin/ && sudo systemctl enable --now alpha-miner
-sudo journalctl -u alpha-miner -f
-```
-
-## Troubleshooting
-
-| Symptom | Fix |
-|---|---|
-| `libcuda.so.1: cannot open shared object` | NVIDIA driver missing/old — install driver 545+ |
-| `no kernel image is available` | Unsupported arch build — try `--force-backend volta` (V100/CMP) |
-| `unknown argument: " "` | Multi-line paste stripped newlines — use the single-line command |
-| Vardiff stuck low | Pin `--password 'x;d=32768'` (or higher) |
-| `stale: chain advanced` rejects | Normal (pool moved to a new block); <1% is healthy |
-| HiveOS shows `0 H/s` per-GPU | Old wrapper — reinstall the latest HiveOS release |
-
-## Support
-
-Pool stats: <https://pearl.alphapool.tech> · Discord: link in pool footer · Binary issues: open a GitHub issue.
+---
 
 ## License
 
-Binary redistribution permitted via this repository. Source is not public. All rights reserved by the author.
+Binary redistribution permitted via this repository. Source is not public. All rights reserved by the original author ([AlphaMine-Tech](https://github.com/AlphaMine-Tech)).  
+Wrapper scripts in this fork are original work by [nostalgia-mining](https://github.com/nostalgia-mining) and released under MIT.

@@ -1,0 +1,30 @@
+# ============================================================
+# Safety: never accidentally commit anything from the local
+# NOCKminer project or other sibling folders
+# ============================================================
+../NOCKminer/
+../NOCKminer/**
+NOCKminer/
+NOCKminer/**
+
+# Compiled / downloaded binaries (the 'alpha' binary is
+# distributed via GitHub Releases, not committed to the repo)
+alpha/alpha
+alpha-miner
+
+# Packaging artifacts
+*.tar.gz
+*.zip
+
+# OS noise
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor folders
+.vscode/
+.idea/
+
+# Temp / log files
+*.log
+*.tmp
