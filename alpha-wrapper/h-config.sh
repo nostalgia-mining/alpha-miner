@@ -27,7 +27,7 @@
 [[ -z $SCRIPT_PATH ]] && SCRIPT_PATH=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 [[ -f "$SCRIPT_PATH/h-manifest.conf" ]] && source "$SCRIPT_PATH/h-manifest.conf"
 
-conf_file="${CUSTOM_CONFIG_FILENAME:-/hive/miners/custom/alpha/miner.conf}"
+conf_file="${CUSTOM_CONFIG_FILENAME:-/hive/miners/custom/alpha-wrapper/miner.conf}"
 
 # ---- Validate required inputs ------------------------------------------------
 if [[ -z "${CUSTOM_TEMPLATE:-}" ]]; then

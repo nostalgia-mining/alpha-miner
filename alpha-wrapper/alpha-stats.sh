@@ -9,11 +9,11 @@
 #   WALLET      — PEARL wallet address (for display)
 set -u
 
-LOG_FILE="${LOG_FILE:-/var/log/miner/custom/alpha.log}"
+LOG_FILE="${LOG_FILE:-/var/log/miner/custom/alpha-wrapper.log}"
 GPU_LIST="${GPU_LIST:-}"
 WALLET="${WALLET:-unknown}"
 
-GPU_LIST_FILE="/var/run/hive/alpha_gpus.conf"
+GPU_LIST_FILE="/var/run/hive/alpha-wrapper_gpus.conf"
 [[ -z "$GPU_LIST" && -f "$GPU_LIST_FILE" ]] && GPU_LIST="$(cat "$GPU_LIST_FILE" 2>/dev/null)"
 
 STATS_INTERVAL=180

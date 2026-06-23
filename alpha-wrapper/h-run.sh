@@ -9,10 +9,10 @@
 SCRIPT_PATH=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 [[ -f "$SCRIPT_PATH/h-manifest.conf" ]] && source "$SCRIPT_PATH/h-manifest.conf"
 
-LOG="${CUSTOM_LOG_BASENAME:-/var/log/miner/custom/alpha}.log"
-GPU_LIST_FILE="/var/run/hive/alpha_gpus.conf"
+LOG="${CUSTOM_LOG_BASENAME:-/var/log/miner/custom/alpha-wrapper}.log"
+GPU_LIST_FILE="/var/run/hive/alpha-wrapper_gpus.conf"
 STATS_HELPER="$SCRIPT_PATH/alpha-stats.sh"
-STATS_PIDFILE="/var/run/hive/alpha_stats.pid"
+STATS_PIDFILE="/var/run/hive/alpha-wrapper_stats.pid"
 
 mkdir -p "$(dirname "$LOG")" 2>/dev/null
 mkdir -p /var/run/hive 2>/dev/null
