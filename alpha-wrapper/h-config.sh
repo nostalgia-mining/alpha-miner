@@ -138,7 +138,7 @@ fi
 # ---- Build base args for alpha-miner binary ----------------------------------
 declare -a BASE_ARGS=(
     --address "$wallet"
-    --status-interval 30
+    --status-interval 10
 )
 [[ -n "$worker" ]] && BASE_ARGS+=( --worker "$worker" )
 
