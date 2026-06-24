@@ -81,7 +81,19 @@ fmt_hs() {
 
 fmt_hs_total() {
     awk -v v="$1" 'BEGIN{
-        if      (v >= 1e16) printf "%.3f PH/s", v/1e15
+        if      (v >= 1e16) printf "%.2f PH/s", v/1e15
+        else if (v >= 1e12) printf "%.2f TH/s", v/1e12
+        else if (v >= 1e9)  printf "%.2f GH/s", v/1e9
+        else if (v >= 1e6)  printf "%.2f MH/s", v/1e6
+        else if (v >= 1e3)  printf "%.1f kH/s", v/1e3
+        else                printf "%.0f H/s",  v
+    }'
+}
+
+# Pool hashrate (share_equiv): scales to PH/s at >= 1000 TH/s, 2 decimals
+fmt_pool_hr() {
+    awk -v v="$1" 'BEGIN{
+        if      (v >= 1e15) printf "%.2f PH/s", v/1e15
         else if (v >= 1e12) printf "%.2f TH/s", v/1e12
         else if (v >= 1e9)  printf "%.2f GH/s", v/1e9
         else if (v >= 1e6)  printf "%.2f MH/s", v/1e6
@@ -292,8 +304,8 @@ collect_ping() {
 #   7 spaces + "Pool" (4) + " : " = 14 chars before value
 #   Format: "%-7s%4s : %-s" padded to 45 chars
 #
-GPU_ROW_FMT="%2s %-18.18s  %12s %-9s  %6s  %-10s  %-5s  %-4s  %-4s  %-5s"
-HDR_ROW_FMT="%2s %-18s  %-12s %-9s  %-6s  %-10s  %-5s  %-4s  %-4s  %-5s"
+GPU_ROW_FMT="%2s %-18.18s  %12s %-10s %-6s  %-9s   %-5s   %-4s  %-5s %-5s"
+HDR_ROW_FMT="%2s %-18s  %-12s %-10s %-6s  %-9s   %-5s   %-4s  %-5s %-5s"
 
 render() {
     local ts; ts="[$(date +'%H:%M:%S')]"
@@ -350,7 +362,7 @@ render() {
     local total_eff; total_eff="$(fmt_eff "$TOTAL_HASH_RAW" "$TOTAL_WATTS")"
     local total_sh="${TOTAL_ACC}/${TOTAL_REJ}"
     local total_row
-    printf -v total_row "   %-18s  %12s %-9s  %6s  %-10s" \
+    printf -v total_row "   %-18s  %12s %-10s %-6s  %-9s" \
         "Total" "$total_hr" "$total_sh" "$TOTAL_WATTS" "$total_eff"
     tprint "${G}${ts} ${total_row}${R}"
 
@@ -399,7 +411,7 @@ render() {
         (( LAST_SHARE_AGO >= ttf_secs * 2 && LAST_SHARE_AGO < ttf_secs * 3 )) && last_str="${last_str} !"
     fi
 
-    local pool_hr;   pool_hr="$(fmt_hs_total "$TOTAL_EQUIV_RAW")"
+    local pool_hr;   pool_hr="$(fmt_pool_hr "$TOTAL_EQUIV_RAW")"
     local ping_str="n/a"
     (( LAST_PING_MS > 0 )) && ping_str="${LAST_PING_MS} ms"
     local pool_disp="${POOL_HOST#stratum+tcp://}"
