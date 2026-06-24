@@ -67,10 +67,21 @@ uptime_str() {
     fi
 }
 
-# Auto-scale: PH/s when >= 1000 TH/s, else TH/s (or lower if tiny)
+# Auto-scale: individual GPU hashrates always TH/s (or lower).
+# Total uses PH/s only when >= 10000 TH/s (1e16 raw).
 fmt_hs() {
     awk -v v="$1" 'BEGIN{
-        if      (v >= 1e15) printf "%.3f PH/s", v/1e15
+        if      (v >= 1e12) printf "%.2f TH/s", v/1e12
+        else if (v >= 1e9)  printf "%.2f GH/s", v/1e9
+        else if (v >= 1e6)  printf "%.2f MH/s", v/1e6
+        else if (v >= 1e3)  printf "%.1f kH/s", v/1e3
+        else                printf "%.0f H/s",  v
+    }'
+}
+
+fmt_hs_total() {
+    awk -v v="$1" 'BEGIN{
+        if      (v >= 1e16) printf "%.3f PH/s", v/1e15
         else if (v >= 1e12) printf "%.2f TH/s", v/1e12
         else if (v >= 1e9)  printf "%.2f GH/s", v/1e9
         else if (v >= 1e6)  printf "%.2f MH/s", v/1e6
@@ -251,29 +262,38 @@ collect_ping() {
 
 # ===== Render =================================================================
 #
-# GPU row format string — positions verified against pearl_stats_table.txt:
-#   pos 0 : idx    (%2s)
-#   pos 2 : space
-#   pos 3 : name   (%-18.18s)  -- truncates at 18 chars
-#   pos 21: space+space
-#   pos 23: hr     (%-12s)
-#   pos 35: space
-#   pos 36: shares (%-9s)
-#   pos 45: space
-#   pos 46: watts  (%-8s)
-#   pos 54: space
-#   pos 55: eff    (%-10s)    -- "X.XX TH/W" = 9 chars, fits in 10
-#   pos 65: space+space
-#   pos 67: temp   (%-5s)
-#   pos 72: space+space
-#   pos 74: fan    (%-4s)
-#   pos 78: space+space
-#   pos 80: cclk   (%-4s)
-#   pos 84: space+space
-#   pos 86: mclk   (%-5s)    -- ends at 91 ✓
+# Verified column positions from pearl_stats_table2.txt:
+#   pos  0 : idx    %2s  (right-aligned, e.g. " 0" or "10")
+#   pos  2 : space
+#   pos  3 : name   %-18.18s  (left-aligned, truncated)
+#   pos 21 : space+space
+#   pos 23 : hr     %12s  (RIGHT-aligned so "TH/s" always lands at pos 30-33)
+#   pos 35 : space
+#   pos 36 : shares %-9s  (left-aligned)
+#   pos 45 : space+space  (note: Watts header at pos 47)
+#   pos 47 : watts  %6s  (RIGHT-aligned, no W suffix)
+#   pos 53 : space+space
+#   pos 55 : eff    %-10s
+#   pos 65 : space+space
+#   pos 67 : temp   %-5s
+#   pos 72 : space+space
+#   pos 74 : fan    %-4s
+#   pos 78 : space+space
+#   pos 80 : cclk   %-4s
+#   pos 84 : space+space
+#   pos 86 : mclk   %-5s   → ends at 91 ✓
 #
-GPU_ROW_FMT="%2s %-18.18s  %-12s %-9s %-8s %-10s  %-5s  %-4s  %-4s  %-5s"
-HDR_ROW_FMT="%2s %-18s  %-12s %-9s %-8s %-10s  %-5s  %-4s  %-4s  %-5s"
+# Footer pipe at pos 45. Left pane 0-44 (45 chars). Right pane 46-90 (45 chars).
+# Footer left colon at pos 21: 8 leading spaces + 13-char right-aligned label + " : " + value
+#   8 + 13 + 3 = 24... let me verify from file: "        Time to find : "
+#   "        " = 8, "Time to find" = 12, " : " = 3  → colon at pos 8+12=20, value at 23
+#   So label right-aligned in 12, 8 leading spaces: format "%-8s%12s : %-s" padded to 45
+# Footer right pane: "       Pool : eu1.alphapool.tech:5566        "
+#   7 spaces + "Pool" (4) + " : " = 14 chars before value
+#   Format: "%-7s%4s : %-s" padded to 45 chars
+#
+GPU_ROW_FMT="%2s %-18.18s  %12s %-9s  %6s  %-10s  %-5s  %-4s  %-4s  %-5s"
+HDR_ROW_FMT="%2s %-18s  %-12s %-9s  %-6s  %-10s  %-5s  %-4s  %-4s  %-5s"
 
 render() {
     local ts; ts="[$(date +'%H:%M:%S')]"
@@ -283,7 +303,8 @@ render() {
     # ---- Title ---------------------------------------------------------------
     tprint "${G}${B}${ts} ${TOP_TITLE}${R}"
 
-    # ---- Header row 1: left-aligned name, right-aligned uptime --------------
+    # ---- Header row 1: left "AlphaMiner v1.8.3", right "Uptime: X" ----------
+    # Right side must fit exactly — no trailing spaces (uptime_str has none)
     local h1_left="AlphaMiner v${VER}"
     local h1_right="Uptime: ${up}"
     local h1_gap=$(( TW - ${#h1_left} - ${#h1_right} ))
@@ -291,7 +312,7 @@ render() {
     printf -v _h1 "%s%*s%s" "$h1_left" "$h1_gap" '' "$h1_right"
     tprint "${G}${ts} ${_h1}${R}"
 
-    # ---- Header row 2: left-aligned pool, right-aligned address -------------
+    # ---- Header row 2: left "PEARL / AlphaPool", right "Address: ..." -------
     local h2_left="PEARL / AlphaPool"
     local h2_right="Address: ${wallet_s}"
     local h2_gap=$(( TW - ${#h2_left} - ${#h2_right} ))
@@ -303,7 +324,6 @@ render() {
 
     # ---- Column header -------------------------------------------------------
     local hdr_line
-    # shellcheck disable=SC2059
     printf -v hdr_line "$HDR_ROW_FMT" \
         "#" "GPU Name" "Hashrate" "Shares" "Watts" "Efficiency" "Temp" "Fan" "CClk" "MClk"
     tprint "${G}${ts} ${hdr_line}${R}"
@@ -316,57 +336,51 @@ render() {
         local hr;    hr="$(fmt_hs  "${GPU_HASH_RAW[$i]}")"
         local eff;   eff="$(fmt_eff "${GPU_HASH_RAW[$i]}" "${GPU_WATTS[$i]}")"
         local shares="${GPU_ACC[$i]:-0}/${GPU_REJ[$i]:-0}"
-        local wstr="${GPU_WATTS[$i]}W"
         local row
-        # shellcheck disable=SC2059
         printf -v row "$GPU_ROW_FMT" \
             "$idx" "${GPU_NAMES[$i]}" \
-            "$hr" "$shares" "$wstr" "$eff" \
+            "$hr" "$shares" "${GPU_WATTS[$i]}" "$eff" \
             "${GPU_TEMP[$i]}" "${GPU_FAN[$i]}" \
             "${GPU_CCLK[$i]}" "${GPU_MCLK[$i]}"
         tprint "${G}${ts} ${row}${R}"
     done
 
-    # ---- Total row (no Temp/Fan/CClk/MClk) ----------------------------------
-    local total_hr;  total_hr="$(fmt_hs  "$TOTAL_HASH_RAW")"
+    # ---- Total row -----------------------------------------------------------
+    local total_hr;  total_hr="$(fmt_hs_total "$TOTAL_HASH_RAW")"
     local total_eff; total_eff="$(fmt_eff "$TOTAL_HASH_RAW" "$TOTAL_WATTS")"
     local total_sh="${TOTAL_ACC}/${TOTAL_REJ}"
-    local total_w="${TOTAL_WATTS}W"
     local total_row
-    printf -v total_row "   %-18s  %-12s %-9s %-8s %-10s" \
-        "Total" "$total_hr" "$total_sh" "$total_w" "$total_eff"
+    printf -v total_row "   %-18s  %12s %-9s  %6s  %-10s" \
+        "Total" "$total_hr" "$total_sh" "$TOTAL_WATTS" "$total_eff"
     tprint "${G}${ts} ${total_row}${R}"
 
     tprint "${G}${ts} ${BAR_DASH}${R}"
 
     # ---- Footer --------------------------------------------------------------
-    # Pipe at pos 45. Left pane = 45 chars (pos 0-44). Right pane = 45 chars (pos 46-90).
-    local LPANE=45
-    local RPANE=45
+    # Pipe at pos 45. Left pane = 45 chars. Right pane = 45 chars.
+    local LPANE=45 RPANE=45
 
-    # Center section titles
-    local ltitle="Share Metrics"
-    local rtitle="Pool Info"
+    # Section titles: "Share Metrics" (13 chars) centered in 45 → pad 16 each side
+    # "Pool Info" (9 chars) centered in 45 → pad 18 each side
+    local ltitle="Share Metrics" rtitle="Pool Info"
     local lpad=$(( (LPANE - ${#ltitle}) / 2 ))
     local lrpad=$(( LPANE - ${#ltitle} - lpad ))
     local rpad=$(( (RPANE - ${#rtitle}) / 2 ))
     local rrpad=$(( RPANE - ${#rtitle} - rpad ))
-    printf -v _ltitle '%*s%s%*s' "$lpad" '' "$ltitle" "$lrpad" ''
-    printf -v _rtitle '%*s%s%*s' "$rpad" '' "$rtitle" "$rrpad" ''
+    printf -v _ltitle '%*s%s%*s' "$lpad"  '' "$ltitle" "$lrpad"  ''
+    printf -v _rtitle '%*s%s%*s' "$rpad"  '' "$rtitle" "$rrpad"  ''
     tprint "${G}${ts} ${_ltitle}|${_rtitle}${R}"
     tprint "${G}${ts} ${BAR_EQ}${R}"
 
     # Footer content rows.
-    # Left pane:  "        LABEL : VALUE           "  (45 chars)
-    #   label right-aligned in 12 chars, ": " (2), value left-aligned in 29 chars
-    #   2 leading spaces: "  " + %12s + " : " + %-29s = 2+12+3+29=46... too wide
-    #   From text: "        Time to find : 14 sec   " -- 8 spaces + "Time to find" (12) + " : " = 23 chars before value
-    #   Label field width = 12 (right-aligned), leading indent = 8 spaces
-    #   Format: "%8s%-12s : %-22s" = 8+12+3+22=45 ✓  (label right-aligned in 12)
-    # Right pane: "       Pool : eu1.alphapool..."
-    #   7 spaces + "Pool" (4) + " : " = 14 chars before value
-    #   Format: "%7s%-4s : %-s" but value padded to fill 45 chars total
-    #   Right pane format: "%7s%-9s : %-s" -- 7+9+3=19, value fills rest
+    # Left pane (45 chars):
+    #   8 leading spaces + label right-aligned in 12 + " : " + value left-padded to fill rest
+    #   8 + 12 + 3 = 23 chars before value → value has 45-23=22 chars
+    #   Format: printf "%-8s%12s : %-22s"  → 8+12+3+22=45 ✓
+    # Right pane (45 chars):
+    #   7 leading spaces + label right-aligned in 4 + " : " + value left-padded to fill rest
+    #   7 + 4 + 3 = 14 chars before value → value has 45-14=31 chars
+    #   Format: printf "%-7s%4s : %-31s"  → 7+4+3+31=45 ✓
 
     # Compute TTF
     local diff_0="${GPU_DIFFS[0]:-524288}"
@@ -378,43 +392,29 @@ render() {
         ttf_str="$(fmt_ttf "$ttf_secs")"
     fi
 
-    # Last found + alert if > 2x TTF
+    # Last found + alert if > 2x or 3x TTF
     local last_str; last_str="$(fmt_ago "$LAST_SHARE_AGO")"
     if (( ttf_secs > 0 && LAST_SHARE_AGO > 0 )); then
-        if (( LAST_SHARE_AGO >= ttf_secs * 3 )); then
-            last_str="${last_str} !!!"
-        elif (( LAST_SHARE_AGO >= ttf_secs * 2 )); then
-            last_str="${last_str} !"
-        fi
+        (( LAST_SHARE_AGO >= ttf_secs * 3 )) && last_str="${last_str} !!!"
+        (( LAST_SHARE_AGO >= ttf_secs * 2 && LAST_SHARE_AGO < ttf_secs * 3 )) && last_str="${last_str} !"
     fi
 
-    # Pool hashrate from share_equiv
-    local pool_hr; pool_hr="$(fmt_hs "$TOTAL_EQUIV_RAW")"
-
+    local pool_hr;   pool_hr="$(fmt_hs_total "$TOTAL_EQUIV_RAW")"
     local ping_str="n/a"
     (( LAST_PING_MS > 0 )) && ping_str="${LAST_PING_MS} ms"
-
     local pool_disp="${POOL_HOST#stratum+tcp://}"
 
-    # Build footer rows: each is exactly LPANE + "|" + RPANE = 91 chars
-    # Left:  8 spaces + 12-char right-aligned label + " : " + value padded to fill 45
-    # Right: 7 spaces + 4-char right-aligned label + " : " + value padded to fill 45
     _frow() {
         local ll="$1" lv="$2" rl="$3" rv="$4"
-        # Left pane: "        " (8) + right-align label in 12 + " : " + value
-        local lc; printf -v lc '%8s%12s : %s' '' "$ll" "$lv"
-        # Pad to exactly LPANE chars
-        lc="${lc:0:$LPANE}"
-        printf -v lc "%-${LPANE}s" "$lc"
-        # Right pane: "       " (7) + right-align label in 4 + " : " + value
-        local rc; printf -v rc '%7s%4s : %s' '' "$rl" "$rv"
-        printf -v rc "%-${RPANE}s" "$rc"
+        local lc rc
+        printf -v lc '%8s%12s : %-22s' '' "$ll" "$lv"
+        printf -v rc '%7s%4s : %-31s'  '' "$rl" "$rv"
         tprint "${G}${ts} ${lc}|${rc}${R}"
     }
 
-    _frow "Time to find" "$ttf_str"  "Pool" "$pool_disp"
-    _frow "Last found"   "$last_str" "Ping" "$ping_str"
-    _frow "Pool hashrate" "$pool_hr" "Algo" "pearlhash"
+    _frow "Time to find" "$ttf_str"   "Pool" "$pool_disp"
+    _frow "Last found"   "$last_str"  "Ping" "$ping_str"
+    _frow "Pool hashrate" "$pool_hr"  "Algo" "pearlhash"
 
     tprint "${G}${ts} ${BAR_DASH}${R}"
 }
