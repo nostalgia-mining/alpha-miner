@@ -69,36 +69,43 @@ uptime_str() {
 
 # Auto-scale: individual GPU hashrates always TH/s (or lower).
 # Total uses PH/s only when >= 10000 TH/s (1e16 raw).
+# All values formatted to fixed decimal width so decimal points align
+# when right-justified in a %12s field:
+#   "  32.34 TH/s" (10 chars → 2 leading spaces in %12s)  ← PROBLEM
+# Solution: always produce exactly N chars for the number+unit so
+# right-justification keeps decimals aligned.
+# Format: use %6.2f for the number (always "XXX.XX" or " XX.XX" = 6 chars)
+# so total = 6 + 1 space + unit(4) = 11 chars → %12s adds 1 leading space always.
 fmt_hs() {
     awk -v v="$1" 'BEGIN{
-        if      (v >= 1e12) printf "%.2f TH/s", v/1e12
-        else if (v >= 1e9)  printf "%.2f GH/s", v/1e9
-        else if (v >= 1e6)  printf "%.2f MH/s", v/1e6
-        else if (v >= 1e3)  printf "%.1f kH/s", v/1e3
-        else                printf "%.0f H/s",  v
+        if      (v >= 1e12) printf "%6.2f TH/s", v/1e12
+        else if (v >= 1e9)  printf "%6.2f GH/s", v/1e9
+        else if (v >= 1e6)  printf "%6.2f MH/s", v/1e6
+        else if (v >= 1e3)  printf "%6.1f kH/s", v/1e3
+        else                printf "%6.0f H/s  ", v
     }'
 }
 
 fmt_hs_total() {
     awk -v v="$1" 'BEGIN{
-        if      (v >= 1e16) printf "%.2f PH/s", v/1e15
-        else if (v >= 1e12) printf "%.2f TH/s", v/1e12
-        else if (v >= 1e9)  printf "%.2f GH/s", v/1e9
-        else if (v >= 1e6)  printf "%.2f MH/s", v/1e6
-        else if (v >= 1e3)  printf "%.1f kH/s", v/1e3
-        else                printf "%.0f H/s",  v
+        if      (v >= 1e16) printf "%6.2f PH/s", v/1e15
+        else if (v >= 1e12) printf "%6.2f TH/s", v/1e12
+        else if (v >= 1e9)  printf "%6.2f GH/s", v/1e9
+        else if (v >= 1e6)  printf "%6.2f MH/s", v/1e6
+        else if (v >= 1e3)  printf "%6.1f kH/s", v/1e3
+        else                printf "%6.0f H/s  ", v
     }'
 }
 
 # Pool hashrate (share_equiv): scales to PH/s at >= 1000 TH/s, 2 decimals
 fmt_pool_hr() {
     awk -v v="$1" 'BEGIN{
-        if      (v >= 1e15) printf "%.2f PH/s", v/1e15
-        else if (v >= 1e12) printf "%.2f TH/s", v/1e12
-        else if (v >= 1e9)  printf "%.2f GH/s", v/1e9
-        else if (v >= 1e6)  printf "%.2f MH/s", v/1e6
-        else if (v >= 1e3)  printf "%.1f kH/s", v/1e3
-        else                printf "%.0f H/s",  v
+        if      (v >= 1e15) printf "%6.2f PH/s", v/1e15
+        else if (v >= 1e12) printf "%6.2f TH/s", v/1e12
+        else if (v >= 1e9)  printf "%6.2f GH/s", v/1e9
+        else if (v >= 1e6)  printf "%6.2f MH/s", v/1e6
+        else if (v >= 1e3)  printf "%6.1f kH/s", v/1e3
+        else                printf "%6.0f H/s  ", v
     }'
 }
 
