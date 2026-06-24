@@ -10,7 +10,6 @@
 #   Pool URL          : stratum+tcp://%URL%      (HiveOS substitutes pool address)
 #   Password          : x;d=524288               (or any difficulty value you want)
 #   Extra config args : --devices 0,1  OR  --gpu 0,1   (both accepted, see below)
-#                       --status-interval 30            (override miner default of 10)
 #
 # GPU selection: you can use either alpha-miner's native --devices flag or our
 # --gpu alias — both are handled identically. --gpu is translated to --devices
@@ -28,7 +27,7 @@
 [[ -z $SCRIPT_PATH ]] && SCRIPT_PATH=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 [[ -f "$SCRIPT_PATH/h-manifest.conf" ]] && source "$SCRIPT_PATH/h-manifest.conf"
 
-conf_file="${CUSTOM_CONFIG_FILENAME:-/hive/miners/custom/alpha-wrapper/miner.conf}"
+conf_file="${CUSTOM_CONFIG_FILENAME:-/hive/miners/custom/alpha/miner.conf}"
 
 # ---- Validate required inputs ------------------------------------------------
 if [[ -z "${CUSTOM_TEMPLATE:-}" ]]; then
@@ -139,6 +138,7 @@ fi
 # ---- Build base args for alpha-miner binary ----------------------------------
 declare -a BASE_ARGS=(
     --address "$wallet"
+    --status-interval 30
 )
 [[ -n "$worker" ]] && BASE_ARGS+=( --worker "$worker" )
 
