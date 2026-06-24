@@ -163,7 +163,7 @@ collect_gpu_metrics() {
         [[ -z "$mclk"  ]] && mclk="n/a"
         [[ -z "$watts" || "$watts" == "N/A" ]] && watts=0
         watts=$(awk -v w="$watts" 'BEGIN{printf "%.1f", w+0}')
-        temp="${temp}C"; fan="${fan}%"
+        temp="${temp}°C"; fan="${fan}%"
 
         mapfile -t hash_samp < <(
             tail -n "$HSTATS_RAW_LINES" "$BUFFER_FILE" 2>/dev/null \
