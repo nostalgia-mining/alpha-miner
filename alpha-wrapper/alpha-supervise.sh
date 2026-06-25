@@ -31,7 +31,8 @@ MINER_BIN="$SCRIPT_PATH/alpha"
 # Rolling buffer — /run is tmpfs on Linux (RAM, not persisted across reboots)
 BUFFER_DIR="/run/alpha-wrapper"
 BUFFER_FILE="$BUFFER_DIR/miner-raw.buf"
-: "${BUFFER_LINES:=3000}"
+: "${BUFFER_LINES:=5000}"   # 5000 lines ≈ 1 min at status-interval 1 on 12 GPUs
+                             # Rule of thumb: ~68 lines/sec per 12 GPUs → scale with GPU count
 
 if [[ ! -x "$MINER_BIN" ]]; then
     echo "ERROR: Binary not found or not executable: $MINER_BIN"
