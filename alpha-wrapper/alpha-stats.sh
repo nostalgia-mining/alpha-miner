@@ -273,34 +273,22 @@ collect_share_metrics() {
 
 LAST_PING_MS=0
 collect_ping() {
+    # Real TCP ping to pool host:port via /dev/tcp (always available in bash).
+    # Measures TCP connect time = network round-trip latency.
     LAST_PING_MS=0
-    local recent; recent=$(tail -n 200 "$BUFFER_FILE" 2>/dev/null)
-    local acc_line_num
-    acc_line_num=$(printf '%s\n' "$recent" | grep -na "component=share accepted" | tail -n1 | cut -d: -f1)
-    [[ -z "$acc_line_num" ]] && return
-    local acc_line acc_ts
-    acc_line=$(printf '%s\n' "$recent" | sed -n "${acc_line_num}p")
-    acc_ts="${acc_line%% *}"
-    local before prev_hits=0 submit_ts=""
-    before=$(printf '%s\n' "$recent" | head -n "$acc_line_num")
-    while IFS= read -r sline; do
-        [[ "$sline" =~ "component=miner status" ]] || continue
-        local cur_hits=0
-        [[ "$sline" =~ [[:space:]]hits=([0-9]+) ]] && cur_hits="${BASH_REMATCH[1]}"
-        (( cur_hits > prev_hits )) && submit_ts="${sline%% *}"
-        prev_hits=$cur_hits
-    done <<< "$before"
-    [[ -z "$submit_ts" ]] && return
-    _ms() {
-        local ts="$1" sp="${1%.*}" frac
-        frac="${ts##*.}"; frac="${frac%Z}"; frac="${frac:0:3}"
-        while (( ${#frac} < 3 )); do frac="${frac}0"; done
-        local ep; ep=$(date -d "${sp}Z" +%s 2>/dev/null) || ep=0
-        echo $(( ep*1000 + 10#$frac ))
-    }
-    local sm am dm
-    sm=$(_ms "$submit_ts"); am=$(_ms "$acc_ts"); dm=$(( am - sm ))
-    (( dm > 0 && dm < 60000 )) && LAST_PING_MS=$dm
+    local host="${POOL_HOST#stratum+tcp://}"
+    local pool_h="${host%%:*}"
+    local pool_p="${host##*:}"
+    [[ -z "$pool_h" || -z "$pool_p" ]] && return
+
+    # Timeout of 3 seconds to avoid blocking the stats loop
+    local start_ms end_ms
+    start_ms=$(date +%s%3N)
+    if timeout 3 bash -c "exec 3<>/dev/tcp/${pool_h}/${pool_p}" 2>/dev/null; then
+        end_ms=$(date +%s%3N)
+        LAST_PING_MS=$(( end_ms - start_ms ))
+        (( LAST_PING_MS <= 0 || LAST_PING_MS > 10000 )) && LAST_PING_MS=0
+    fi
 }
 
 # ===== Render =================================================================
