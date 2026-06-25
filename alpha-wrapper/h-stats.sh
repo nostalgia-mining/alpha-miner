@@ -14,7 +14,8 @@
 [[ -f "$SCRIPT_PATH/h-manifest.conf" ]] && source "$SCRIPT_PATH/h-manifest.conf"
 [[ -f "$SCRIPT_PATH/miner.conf" ]]      && source "$SCRIPT_PATH/miner.conf"
 
-log_file="${CUSTOM_LOG_BASENAME}.log"
+BUFFER_FILE="${BUFFER_FILE:-/run/alpha-wrapper/miner-raw.buf}"
+log_file="$BUFFER_FILE"
 : "${REPORT_METRIC:=raw}"
 : "${HSTATS_RAW_LINES:=6000}"
 
@@ -70,8 +71,8 @@ rej=$(echo "$last_status" | grep -oE '\brejected=[0-9]+\b' | cut -d= -f2)
 [[ -z "$rej" ]] && rej=$(grep -ac "component=share rejected"  "$log_file" 2>/dev/null || echo 0)
 acc=${acc:-0}; rej=${rej:-0}
 
-# Uptime from live process
-miner_pid=$(pgrep -f "$SCRIPT_PATH/alpha --pool" 2>/dev/null | head -1)
+# Uptime from live process — search for the alpha binary in alpha-wrapper dir
+miner_pid=$(pgrep -f "alpha-wrapper/alpha --pool" 2>/dev/null | head -1)
 [[ -n "$miner_pid" ]] && uptime_sec=$(ps -o etimes= -p "$miner_pid" 2>/dev/null | tr -d ' ')
 [[ "$uptime_sec" =~ ^[0-9]+$ ]] || uptime_sec=$(( $(date +%s) - $(stat -c %Y "$CUSTOM_CONFIG_FILENAME" 2>/dev/null || date +%s) ))
 
