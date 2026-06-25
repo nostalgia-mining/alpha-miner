@@ -4,30 +4,33 @@
 # Translates flight-sheet variables into miner.conf
 #
 # HiveOS Flight Sheet setup:
-#   Miner name        : alpha
+#   Miner name        : alpha-wrapper
 #   Hash algorithm    : pearlhash
 #   Wallet template   : %WAL%.%WORKER_NAME%
 #   Pool URL          : stratum+tcp://%URL%      (HiveOS substitutes pool address)
-#   Password          : x;d=524288               (or any difficulty value you want)
-#   Extra config args : --devices 0,1  OR  --gpu 0,1   (both accepted, see below)
-#
-# GPU selection: you can use either alpha-miner's native --devices flag or our
-# --gpu alias — both are handled identically. --gpu is translated to --devices
-# before being passed to the binary. If neither is present, all GPUs are used.
+#   Password          : x                        (leave as x; use --diff for difficulty)
+#   Extra config args : see below
 #
 # Wrapper-only extra config keys (stripped, NOT forwarded to the binary):
-#   --gpu 0,1,2           Alias for --devices (stripped and re-added as --devices)
-#   --nostats             Suppress on-screen alpha-stats.sh display
-#   FAILOVER_GRACE_SEC=N  Failover tunable
+#   --gpu 0,1,2           Alias for --devices
+#   --diff 524288         Static difficulty — single value applied to all GPUs,
+#   --diff 524288,262144  or comma-separated per-GPU values.
+#                         Translates to --password 'x;d=VALUE' (or appends to
+#                         existing password if user also set one).
+#                         If user already has d= in the Password field, --diff
+#                         takes precedence.
+#   --nostats             Suppress on-screen stats
+#   FAILOVER_GRACE_SEC=N  Failover tunables
 #   FAILOVER_DEAD_SEC=N
 #   FAILOVER_RETURN_SEC=N
+#   BUFFER_LINES=N        Rolling buffer size (default 10000)
 #   HSTATS_RAW_LINES=N
 #   REPORT_METRIC=raw|equiv
 
 [[ -z $SCRIPT_PATH ]] && SCRIPT_PATH=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 [[ -f "$SCRIPT_PATH/h-manifest.conf" ]] && source "$SCRIPT_PATH/h-manifest.conf"
 
-conf_file="${CUSTOM_CONFIG_FILENAME:-/hive/miners/custom/alpha/miner.conf}"
+conf_file="${CUSTOM_CONFIG_FILENAME:-/hive/miners/custom/alpha-wrapper/miner.conf}"
 
 # ---- Validate required inputs ------------------------------------------------
 if [[ -z "${CUSTOM_TEMPLATE:-}" ]]; then
@@ -56,17 +59,12 @@ if [[ ${#POOLS[@]} -eq 0 ]]; then
     return 1 2>/dev/null || exit 1
 fi
 
-# ---- Split extra config into categories -------------------------------------
-# We do a single-pass tokenisation so --gpu / --devices with a separate value
-# token are handled correctly (e.g. "--gpu 0,1" and "--gpu=0,1" both work).
-
-declare -a EXTRA_ARGS=()      # forwarded verbatim to alpha-miner
-declare -a WRAPPER_CFG=()     # wrapper tunables written to miner.conf
-WRAPPER_GPU_VAL=""            # value from --gpu alias
-WRAPPER_NOSTATS=0             # set when --nostats seen
-
-# Wrapper-only flags that must never reach the binary
-WRAPPER_ONLY_FLAGS=(--gpu --nostats)
+# ---- Split extra config into categories --------------------------------------
+declare -a EXTRA_ARGS=()
+declare -a WRAPPER_CFG=()
+WRAPPER_GPU_VAL=""
+WRAPPER_NOSTATS=0
+WRAPPER_DIFF_VAL=""   # value from --diff (e.g. "524288" or "524288,262144")
 
 if [[ -n "${CUSTOM_USER_CONFIG:-}" ]]; then
     tokens=( $CUSTOM_USER_CONFIG )
@@ -75,7 +73,7 @@ if [[ -n "${CUSTOM_USER_CONFIG:-}" ]]; then
         tok="${tokens[$i]}"
 
         # ---- wrapper tunables (key=value form) -------------------------------
-        if [[ "$tok" =~ ^(FAILOVER_[A-Z0-9_]+|HSTATS_RAW_LINES|REPORT_METRIC)=.+$ ]]; then
+        if [[ "$tok" =~ ^(FAILOVER_[A-Z0-9_]+|HSTATS_RAW_LINES|REPORT_METRIC|BUFFER_LINES)=.+$ ]]; then
             WRAPPER_CFG+=("$tok")
             (( i++ )); continue
         fi
@@ -86,8 +84,20 @@ if [[ -n "${CUSTOM_USER_CONFIG:-}" ]]; then
             (( i++ )); continue
         fi
 
-        # ---- --gpu (our alias for --devices) ---------------------------------
-        # Supports: --gpu 0,1  or  --gpu=0,1
+        # ---- --diff (wrapper alias for setting difficulty) -------------------
+        # --diff 524288   or   --diff=524288
+        # --diff 524288,262144  (per-GPU, comma-separated)
+        if [[ "$tok" == "--diff" ]]; then
+            (( i++ ))
+            WRAPPER_DIFF_VAL="${tokens[$i]:-}"
+            (( i++ )); continue
+        fi
+        if [[ "$tok" =~ ^--diff=(.+)$ ]]; then
+            WRAPPER_DIFF_VAL="${BASH_REMATCH[1]}"
+            (( i++ )); continue
+        fi
+
+        # ---- --gpu (alias for --devices) ------------------------------------
         if [[ "$tok" == "--gpu" ]]; then
             (( i++ ))
             WRAPPER_GPU_VAL="${tokens[$i]:-}"
@@ -98,13 +108,10 @@ if [[ -n "${CUSTOM_USER_CONFIG:-}" ]]; then
             (( i++ )); continue
         fi
 
-        # ---- --devices (native alpha-miner flag) -----------------------------
-        # If the user passes --devices directly, extract the value for GPU_LIST
-        # tracking but also keep the flag in EXTRA_ARGS for the binary.
+        # ---- --devices (native flag, also track for GPU_LIST) ---------------
         if [[ "$tok" == "--devices" ]]; then
             (( i++ ))
             local_val="${tokens[$i]:-}"
-            # Only set WRAPPER_GPU_VAL if --gpu wasn't already used
             [[ -z "$WRAPPER_GPU_VAL" ]] && WRAPPER_GPU_VAL="$local_val"
             EXTRA_ARGS+=( "--devices" "$local_val" )
             (( i++ )); continue
@@ -122,26 +129,19 @@ if [[ -n "${CUSTOM_USER_CONFIG:-}" ]]; then
     done
 fi
 
-# If --gpu was used (and --devices wasn't already added), inject --devices
-# with the validated value into EXTRA_ARGS.
+# Inject --devices if --gpu was used and --devices isn't already in EXTRA_ARGS
 if [[ -n "$WRAPPER_GPU_VAL" ]]; then
-    # Check if --devices is already in EXTRA_ARGS (user used --devices directly)
     already_has_devices=0
     for a in "${EXTRA_ARGS[@]}"; do
         [[ "$a" == "--devices" || "$a" =~ ^--devices= ]] && already_has_devices=1 && break
     done
-    if (( ! already_has_devices )); then
-        EXTRA_ARGS+=( "--devices" "$WRAPPER_GPU_VAL" )
-    fi
+    (( ! already_has_devices )) && EXTRA_ARGS+=( "--devices" "$WRAPPER_GPU_VAL" )
 fi
 
 # ---- Build base args for alpha-miner binary ----------------------------------
-# --status-interval 1 and --debug-log are required by the wrapper:
-#   - status-interval 1: allows accurate ping calculation and per-attempt tracking
-#   - debug-log: enables component=pool job lines needed for job detection and
-#                per-GPU difficulty parsing
-# Both are injected here as defaults. The user can override status-interval
-# by adding --status-interval N in the flight sheet extra config (last-arg wins).
+# --status-interval 1 : required for accurate per-attempt ping calculation
+# --debug-log         : required for component=pool job lines (job detection +
+#                       per-GPU difficulty parsing)
 declare -a BASE_ARGS=(
     --address "$wallet"
     --status-interval 1
@@ -149,9 +149,20 @@ declare -a BASE_ARGS=(
 )
 [[ -n "$worker" ]] && BASE_ARGS+=( --worker "$worker" )
 
-# Password comes from the HiveOS Password field — pass through as-is.
-# The user sets whatever they want (e.g. "x;d=524288").
+# ---- Password / difficulty ---------------------------------------------------
+# Priority: --diff extra config arg > Password field
+# --diff 524288            → --password 'x;d=524288'
+# --diff 524288,262144     → --password 'x;d=524288,262144'  (alpha-miner per-GPU syntax)
+# Password field set       → passed through as-is
+# Neither                  → no --password arg (vardiff)
 pass="${CUSTOM_PASS:-}"
+
+if [[ -n "$WRAPPER_DIFF_VAL" ]]; then
+    # --diff takes precedence; build password string
+    pass="x;d=${WRAPPER_DIFF_VAL}"
+    echo "  Difficulty (--diff): $WRAPPER_DIFF_VAL → --password '$pass'"
+fi
+
 [[ -n "$pass" ]] && BASE_ARGS+=( --password "$pass" )
 
 BASE_ARGS+=( "${EXTRA_ARGS[@]}" )
@@ -166,12 +177,11 @@ BASE_ARGS+=( "${EXTRA_ARGS[@]}" )
     for a in "${BASE_ARGS[@]}"; do printf ' %q' "$a"; done
     printf ' )\n'
     for kv in "${WRAPPER_CFG[@]}"; do printf '%s\n' "$kv"; done
-    # GPU list for stats helper / h-run.sh GPU tracking
     printf 'WRAPPER_GPU_LIST=%q\n'  "${WRAPPER_GPU_VAL:-all}"
     printf 'WRAPPER_NOSTATS=%q\n'   "$WRAPPER_NOSTATS"
-    # Human-readable
-    printf 'POOL_URL=%q\n'  "${POOLS[0]}"
-    printf 'WALLET=%q\n'    "$wallet"
+    printf 'WRAPPER_PASSWORD=%q\n'  "$pass"
+    printf 'POOL_URL=%q\n'          "${POOLS[0]}"
+    printf 'WALLET=%q\n'            "$wallet"
     [[ -n "$worker" ]] && printf 'WORKER=%q\n' "$worker"
 } > "$conf_file"
 

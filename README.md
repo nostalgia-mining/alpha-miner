@@ -33,12 +33,15 @@ This fork adds an enhanced HiveOS wrapper with:
 |---|---|
 | `--gpu 0,1` | Select GPUs by CUDA index (alias for `--devices`) |
 | `--devices 0,1` | Native alpha-miner GPU selection — same effect as `--gpu` |
+| `--diff 524288` | Set static difficulty for all GPUs (alias for `x;d=N` in Password field) |
+| `--diff 524288,262144` | Per-GPU difficulty (comma-separated, one value per GPU) |
 | `--nostats` | Disable the on-screen stats helper |
 | `--force-backend ada` | Override GPU arch auto-detection |
 | `FAILOVER_GRACE_SEC=120` | Seconds before failover check begins (default 120) |
 | `FAILOVER_DEAD_SEC=240` | Seconds with no share before pool is declared dead (default 240) |
 | `FAILOVER_RETURN_SEC=1800` | Seconds before retrying primary pool (default 1800) |
-| `HSTATS_RAW_LINES=6000` | Log lines scanned for stats (default 6000) |
+| `BUFFER_LINES=10000` | Rolling buffer size in lines (default 10000, ~2 min on 12 GPUs) |
+| `HSTATS_RAW_LINES=6000` | Log lines scanned for stats (default 2000) |
 
 > **Note on `--gpu` vs `--devices`:** Both flags accept the same comma-separated CUDA indices.  
 > `--gpu` is a wrapper alias that gets translated to `--devices` before being passed to the binary.  

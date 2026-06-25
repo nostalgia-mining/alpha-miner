@@ -31,8 +31,9 @@ MINER_BIN="$SCRIPT_PATH/alpha"
 # Rolling buffer — /run is tmpfs on Linux (RAM, not persisted across reboots)
 BUFFER_DIR="/run/alpha-wrapper"
 BUFFER_FILE="$BUFFER_DIR/miner-raw.buf"
-: "${BUFFER_LINES:=5000}"   # 5000 lines ≈ 1 min at status-interval 1 on 12 GPUs
-                             # Rule of thumb: ~68 lines/sec per 12 GPUs → scale with GPU count
+: "${BUFFER_LINES:=10000}"  # 10000 lines ≈ 2 min at status-interval 1 on 12 GPUs
+                            # Rule of thumb: ~68 lines/sec per 12 GPUs
+                            # Override via flight sheet: BUFFER_LINES=N
 
 if [[ ! -x "$MINER_BIN" ]]; then
     echo "ERROR: Binary not found or not executable: $MINER_BIN"
@@ -162,6 +163,27 @@ while :; do
             wait "$miner_pid" 2>/dev/null
             echo "$(date -u +%FT%TZ) [wrapper] miner exited on pool[$idx] — rotating"
             rotate="next"; break
+        fi
+
+        # ---- Fatal miner error detection ------------------------------------
+        # Some errors (e.g. "pool pipeline profile changed") require a full
+        # miner restart to recover. We detect these in the buffer and kill/
+        # restart the miner immediately rather than waiting for the failover
+        # dead-share timeout.
+        if grep -qaE 'component=miner error=' "$BUFFER_FILE" 2>/dev/null; then
+            # Only act on errors that appeared after this launch
+            local launch_ts
+            launch_ts=$(date -u -d "@$launch" +%FT%TZ 2>/dev/null || date -u +%FT%TZ)
+            local err_line
+            err_line=$(grep -aE 'component=miner error=' "$BUFFER_FILE" 2>/dev/null | tail -n1)
+            if [[ -n "$err_line" ]]; then
+                echo "$(date -u +%FT%TZ) [wrapper] miner error detected — restarting: $err_line"
+                # Truncate the buffer to remove the error line so we don't
+                # trigger again on the same error after restart
+                grep -vaE 'component=miner error=' "$BUFFER_FILE" > "${BUFFER_FILE}.tmp" 2>/dev/null \
+                    && mv "${BUFFER_FILE}.tmp" "$BUFFER_FILE"
+                rotate="next"; break
+            fi
         fi
 
         t=$(now)
