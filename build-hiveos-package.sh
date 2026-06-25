@@ -86,10 +86,18 @@ if find "$WRAPPER_DIR" \( -name "*nockminer*" -o -name "*golden-miner*" \) 2>/de
 fi
 echo "Clean."
 
-# ---- Fix CRLF line endings (files may have been edited on Windows) -----------
+# ---- Fix CRLF line endings in a temp staging directory ----------------------
+# We work on copies so the git working tree stays clean (no 'modified' files
+# after the build, which would block the next git pull).
 echo ""
-echo "Fixing line endings (CRLF → LF)..."
-find "$WRAPPER_DIR" -maxdepth 1 -name "*.sh" -o -name "*.conf" | while read -r f; do
+echo "Staging files with LF line endings..."
+STAGE_DIR="$(mktemp -d)"
+trap "rm -rf '$STAGE_DIR'" EXIT
+
+cp -r "$WRAPPER_DIR" "$STAGE_DIR/alpha-wrapper"
+cp "$BINARY_DEST" "$STAGE_DIR/alpha-wrapper/alpha"
+
+find "$STAGE_DIR/alpha-wrapper" -name "*.sh" -o -name "*.conf" | while read -r f; do
     dos2unix "$f" 2>/dev/null && echo "  fixed: $(basename "$f")"
 done
 echo "Done."
@@ -97,10 +105,10 @@ echo "Done."
 # ---- Set execute permissions -------------------------------------------------
 echo ""
 echo "Setting permissions..."
-chmod 755 "$BINARY_DEST"
-chmod 755 "$WRAPPER_DIR"/*.sh
-chmod 644 "$WRAPPER_DIR"/miner.conf
-chmod 644 "$WRAPPER_DIR"/h-manifest.conf
+chmod 755 "$STAGE_DIR/alpha-wrapper/alpha"
+chmod 755 "$STAGE_DIR/alpha-wrapper"/*.sh
+chmod 644 "$STAGE_DIR/alpha-wrapper/miner.conf"
+chmod 644 "$STAGE_DIR/alpha-wrapper/h-manifest.conf"
 echo "  755  alpha (binary)"
 echo "  755  *.sh"
 echo "  644  miner.conf"
@@ -109,7 +117,7 @@ echo "  644  h-manifest.conf"
 # ---- Build tarball -----------------------------------------------------------
 echo ""
 echo "Building tarball..."
-cd "$SCRIPT_DIR"
+cd "$STAGE_DIR"
 
 # List all files that will be included
 WRAPPER_FILES=(
@@ -138,6 +146,8 @@ done
 tar -czpf "$OUTPUT" \
     --owner=0 --group=0 \
     "${WRAPPER_FILES[@]}"
+
+cd "$SCRIPT_DIR"
 
 # ---- Verify ------------------------------------------------------------------
 echo ""
