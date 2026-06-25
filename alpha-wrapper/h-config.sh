@@ -136,9 +136,16 @@ if [[ -n "$WRAPPER_GPU_VAL" ]]; then
 fi
 
 # ---- Build base args for alpha-miner binary ----------------------------------
+# --status-interval 1 and --debug-log are required by the wrapper:
+#   - status-interval 1: allows accurate ping calculation and per-attempt tracking
+#   - debug-log: enables component=pool job lines needed for job detection and
+#                per-GPU difficulty parsing
+# Both are injected here as defaults. The user can override status-interval
+# by adding --status-interval N in the flight sheet extra config (last-arg wins).
 declare -a BASE_ARGS=(
     --address "$wallet"
-    --status-interval 30
+    --status-interval 1
+    --debug-log
 )
 [[ -n "$worker" ]] && BASE_ARGS+=( --worker "$worker" )
 

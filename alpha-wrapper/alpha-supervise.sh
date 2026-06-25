@@ -1,27 +1,37 @@
 #!/usr/bin/env bash
-# alpha custom miner — multi-pool failover supervisor (rev 1.3.0.1)
+# alpha-wrapper — multi-pool failover supervisor
 #
-# exec'd by h-run.sh (NOT by HiveOS directly). This is the long-lived
-# foreground process the framework dispatcher blocks on — deliberately named
-# so its argv contains no "h-run.sh" (see hiveos-wrapper-contract).
+# exec'd by h-run.sh (never directly by HiveOS) so "h-run.sh" never
+# appears in the long-lived process argv (HiveOS wrapper contract).
 #
-# alpha-miner has only a single --pool and never exits on pool-down (retries
-# internally forever), so failover MUST be supervised here. Trigger is NOT
-# reconnect-count (attack reconnect storms would flap); a pool is dead only
-# when, past a startup grace, NO share is submitted for a continuous window.
-# Tunables (overridable from flight-sheet extra config via h-config.sh):
-#   FAILOVER_GRACE_SEC 120  FAILOVER_DEAD_SEC 240
-#   FAILOVER_RETURN_SEC 1800  FAILOVER_POLL_SEC 15  FAILOVER_SHARE_SCAN_LINES 8000
+# Architecture:
+#   - Miner stdout/stderr → RAM-backed rolling buffer (/run/alpha-wrapper/miner-raw.buf)
+#     NOT to the persistent log or screen. This keeps the persistent log small
+#     and meaningful, and prevents --status-interval 1 + --debug-log from
+#     flooding /var/log with gigabytes of raw status lines.
+#   - Rolling buffer is capped at BUFFER_LINES lines (trimmed every 500 writes).
+#     At status-interval 1 on 1 GPU: ~6 lines/sec → 3000 lines ≈ 8 min of data.
+#     For N GPUs multiply BUFFER_LINES by N (or set BUFFER_LINES=N*3000 in
+#     flight sheet extra config).
+#   - alpha-events.sh and alpha-stats.sh read from the buffer in real time.
+#   - Failover detection reads the buffer for recent accepted shares.
+#   - Persistent log (written by h-run.sh tee) contains only wrapper messages.
 #
-# HiveOS stop = Ctrl+C to the screen (+ $MINER_STOP file). The SIGINT/TERM
-# trap kills the child miner and exits so the dispatcher/miner-run return.
+# Failover tunables (set via flight sheet extra config → h-config.sh):
+#   FAILOVER_GRACE_SEC=120   FAILOVER_DEAD_SEC=240
+#   FAILOVER_RETURN_SEC=1800 FAILOVER_POLL_SEC=15
+#   BUFFER_LINES=3000
 
 SCRIPT_PATH=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 [[ -f "$SCRIPT_PATH/h-manifest.conf" ]] && source "$SCRIPT_PATH/h-manifest.conf"
 cd "$SCRIPT_PATH"
 
 MINER_BIN="$SCRIPT_PATH/alpha"
-LOG="${CUSTOM_LOG_BASENAME:-/var/log/miner/custom/alpha}.log"
+
+# Rolling buffer — /run is tmpfs on Linux (RAM, not persisted across reboots)
+BUFFER_DIR="/run/alpha-wrapper"
+BUFFER_FILE="$BUFFER_DIR/miner-raw.buf"
+: "${BUFFER_LINES:=3000}"
 
 if [[ ! -x "$MINER_BIN" ]]; then
     echo "ERROR: Binary not found or not executable: $MINER_BIN"
@@ -40,18 +50,45 @@ fi
 : "${FAILOVER_RETURN_SEC:=1800}"
 : "${FAILOVER_POLL_SEC:=15}"
 
-# Miner CUDA index must equal nvidia-smi (NVML/PCI) index for correct per-card
-# stats. HiveOS exports this globally; we set it ourselves to be self-contained.
 export CUDA_DEVICE_ORDER=PCI_BUS_ID
+
+# Ensure buffer directory and file exist
+mkdir -p "$BUFFER_DIR" 2>/dev/null
+touch "$BUFFER_FILE"   2>/dev/null
 
 echo "========================================"
 echo "$CUSTOM_NAME v$CUSTOM_VERSION  (failover supervisor, pid $$)"
 echo "Pools (${#POOLS[@]}): ${POOLS[*]}"
 echo "Base args: ${ALPHA_BASE_ARGS[*]}"
 echo "Failover: grace=${FAILOVER_GRACE_SEC}s dead=${FAILOVER_DEAD_SEC}s return=${FAILOVER_RETURN_SEC}s"
+echo "Buffer: $BUFFER_FILE (${BUFFER_LINES} lines cap)"
 echo "========================================"
 
 miner_pid=""
+writer_pid=""
+
+# ---- Rolling buffer writer --------------------------------------------------
+# Reads from a named pipe, appends to buffer, trims every 500 lines written.
+start_buffer_writer() {
+    local pipe="$1"
+    local cnt_file="$BUFFER_DIR/.wc"
+    echo 0 > "$cnt_file"
+    (
+        while IFS= read -r line; do
+            printf '%s\n' "$line" >> "$BUFFER_FILE"
+            local cnt
+            cnt=$(cat "$cnt_file" 2>/dev/null || echo 0)
+            cnt=$(( cnt + 1 ))
+            if (( cnt >= 500 )); then
+                tail -n "$BUFFER_LINES" "$BUFFER_FILE" > "${BUFFER_FILE}.tmp" \
+                    && mv "${BUFFER_FILE}.tmp" "$BUFFER_FILE"
+                cnt=0
+            fi
+            echo "$cnt" > "$cnt_file"
+        done < "$pipe"
+    ) &
+    writer_pid=$!
+}
 
 stop_miner() {
     [[ -z "$miner_pid" ]] && return
@@ -63,6 +100,9 @@ stop_miner() {
     kill -KILL "$miner_pid" 2>/dev/null
     wait "$miner_pid" 2>/dev/null
     miner_pid=""
+    [[ -n "$writer_pid" ]] && kill "$writer_pid" 2>/dev/null
+    wait "$writer_pid" 2>/dev/null
+    writer_pid=""
 }
 
 on_stop() {
@@ -75,13 +115,11 @@ trap on_stop INT TERM
 
 now() { date +%s; }
 
-# Epoch of the most recent accepted-work line, or 0. Wide tail: during an
-# attack the log fills with reconnect/candidate spam so a genuinely recent
-# share can sit thousands of lines back.
+# Check buffer for a recent accepted share (for failover detection)
 last_share_epoch() {
     local ts
-    ts=$(tail -n "${FAILOVER_SHARE_SCAN_LINES:-8000}" "$LOG" 2>/dev/null \
-         | grep -aE 'component=share (submitted|accepted)' \
+    ts=$(tail -n "${FAILOVER_SHARE_SCAN_LINES:-8000}" "$BUFFER_FILE" 2>/dev/null \
+         | grep -aE 'component=share accepted' \
          | tail -n 1 \
          | grep -oE '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}')
     if [[ -n "$ts" ]]; then
@@ -91,6 +129,7 @@ last_share_epoch() {
     fi
 }
 
+# ---- Main failover loop -----------------------------------------------------
 n=${#POOLS[@]}
 idx=0
 primary_retry_at=$(( $(now) + FAILOVER_RETURN_SEC ))
@@ -98,8 +137,19 @@ primary_retry_at=$(( $(now) + FAILOVER_RETURN_SEC ))
 while :; do
     pool="${POOLS[$idx]}"
     echo "$(date -u +%FT%TZ) [wrapper] launching miner on pool[$idx]=$pool"
-    "$MINER_BIN" --pool "$pool" "${ALPHA_BASE_ARGS[@]}" &
+
+    # Named pipe: miner output flows into the buffer writer, never to screen/log
+    MINER_PIPE="$BUFFER_DIR/miner-$$.pipe"
+    mkfifo "$MINER_PIPE" 2>/dev/null
+
+    start_buffer_writer "$MINER_PIPE"
+
+    "$MINER_BIN" --pool "$pool" "${ALPHA_BASE_ARGS[@]}" > "$MINER_PIPE" 2>&1 &
     miner_pid=$!
+
+    # Unlink the pipe file — open fds keep it alive; cleaned up automatically
+    rm -f "$MINER_PIPE"
+
     launch=$(now)
     rotate=""
 
@@ -109,7 +159,7 @@ while :; do
 
         if ! kill -0 "$miner_pid" 2>/dev/null; then
             wait "$miner_pid" 2>/dev/null
-            echo "$(date -u +%FT%TZ) [wrapper] miner process exited on pool[$idx] — rotating"
+            echo "$(date -u +%FT%TZ) [wrapper] miner exited on pool[$idx] — rotating"
             rotate="next"; break
         fi
 
@@ -118,23 +168,19 @@ while :; do
         (( ls < launch )) && ls=$launch
 
         if (( t - launch > FAILOVER_GRACE_SEC )) && (( t - ls > FAILOVER_DEAD_SEC )); then
-            echo "$(date -u +%FT%TZ) [wrapper] pool[$idx]=$pool DEAD — no accepted share for $((t-ls))s (>${FAILOVER_DEAD_SEC}s); failing over"
+            echo "$(date -u +%FT%TZ) [wrapper] pool[$idx]=$pool DEAD — no share for $((t-ls))s — failing over"
             rotate="next"; break
         fi
 
         if (( idx != 0 )) && (( t >= primary_retry_at )); then
-            echo "$(date -u +%FT%TZ) [wrapper] scheduled retry of primary pool[0]"
+            echo "$(date -u +%FT%TZ) [wrapper] retrying primary pool[0]"
             rotate="primary"; break
         fi
     done
 
     stop_miner
 
-    if [[ "$rotate" == "primary" ]]; then
-        idx=0
-    else
-        idx=$(( (idx + 1) % n ))
-    fi
+    [[ "$rotate" == "primary" ]] && idx=0 || idx=$(( (idx + 1) % n ))
     (( idx == 0 )) && primary_retry_at=$(( $(now) + FAILOVER_RETURN_SEC ))
 
     sleep 2
