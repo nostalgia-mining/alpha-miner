@@ -52,14 +52,17 @@ while [[ ! -f "$BUFFER_FILE" ]]; do sleep 1; done
 # Initialize GPU_DIFF from existing buffer content (for restarts)
 while IFS= read -r line; do
     [[ "$line" =~ [[:space:]]component=pool ]] || continue
-    [[ "$line" =~ [[:space:]]"job "[[:space:]] ]] || [[ "$line" =~ [[:space:]]job[[:space:]]id= ]] || continue
     local gpu_raw="" gpu_idx="" diff=""
     [[ "$line" =~ [[:space:]]gpu=([^[:space:]]+) ]] && gpu_raw="${BASH_REMATCH[1]}"
     gpu_idx="${gpu_raw%%:*}"
     [[ "$gpu_idx" == "system" || -z "$gpu_idx" ]] && gpu_idx="0"
-    [[ "$line" =~ [[:space:]]difficulty=([0-9.]+) ]] && diff="${BASH_REMATCH[1]}"
-    diff="${diff%.00}"
-    [[ -n "$diff" ]] && GPU_DIFF[$gpu_idx]="$diff"
+    
+    # Check both difficulty_set and job lines
+    if [[ "$line" =~ "difficulty_set" ]] || [[ "$line" =~ [[:space:]]"job "[[:space:]] ]] || [[ "$line" =~ [[:space:]]job[[:space:]]id= ]]; then
+        [[ "$line" =~ [[:space:]]difficulty=([0-9.]+) ]] && diff="${BASH_REMATCH[1]}"
+        diff="${diff%.00}"
+        [[ -n "$diff" ]] && GPU_DIFF[$gpu_idx]="$diff"
+    fi
 done < <(tail -n 500 "$BUFFER_FILE" 2>/dev/null)
 
 # Record current size — only process lines written AFTER this point.
@@ -105,6 +108,7 @@ process_line() {
             local diff=""
             [[ "$line" =~ [[:space:]]difficulty=([0-9.]+) ]] && diff="${BASH_REMATCH[1]}"
             diff="${diff%.00}"
+            [[ -n "$diff" ]] && GPU_DIFF[$gpu_idx]="$diff"
             log_print "[${hhmm}] Difficulty set           ${diff}"
         elif [[ "$line" =~ [[:space:]]"job "[[:space:]] ]] || [[ "$line" =~ [[:space:]]job[[:space:]]id= ]]; then
             local job_id="" gen="" diff=""
