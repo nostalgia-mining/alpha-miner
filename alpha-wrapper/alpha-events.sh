@@ -50,22 +50,22 @@ ts_to_ms() {
 while [[ ! -f "$BUFFER_FILE" ]]; do sleep 1; done
 
 # Initialize GPU_DIFF from existing buffer content (for restarts)
-# Search the ENTIRE buffer for the MOST RECENT difficulty per GPU.
-# Use tail to get last occurrence per GPU to handle rolling buffer with mixed sessions.
-while IFS= read -r line; do
-    [[ "$line" =~ [[:space:]]component=pool ]] || continue
-    gpu_raw="" gpu_idx="" diff=""
-    [[ "$line" =~ [[:space:]]gpu=([^[:space:]]+) ]] && gpu_raw="${BASH_REMATCH[1]}"
-    gpu_idx="${gpu_raw%%:*}"
-    [[ "$gpu_idx" == "system" || -z "$gpu_idx" ]] && gpu_idx="0"
+# For each GPU, find its MOST RECENT difficulty from pool events.
+# This handles per-GPU vardiff correctly even in multi-GPU rigs.
+for idx in ${GPU_LIST//,/ }; do
+    # Get the last difficulty_set or job line for this specific GPU
+    last_diff_line=$(grep -a "component=pool" "$BUFFER_FILE" 2>/dev/null \
+        | grep -E " gpu=${idx}:" \
+        | grep -E "(difficulty_set|job )" \
+        | tail -n 1)
     
-    # Check both difficulty_set and job lines
-    if [[ "$line" =~ "difficulty_set" ]] || [[ "$line" =~ [[:space:]]"job "[[:space:]] ]] || [[ "$line" =~ [[:space:]]job[[:space:]]id= ]]; then
-        [[ "$line" =~ [[:space:]]difficulty=([0-9.]+) ]] && diff="${BASH_REMATCH[1]}"
+    if [[ -n "$last_diff_line" ]]; then
+        diff=""
+        [[ "$last_diff_line" =~ [[:space:]]difficulty=([0-9.]+) ]] && diff="${BASH_REMATCH[1]}"
         diff="${diff%.00}"
-        [[ -n "$diff" ]] && GPU_DIFF[$gpu_idx]="$diff"
+        [[ -n "$diff" ]] && GPU_DIFF[$idx]="$diff"
     fi
-done < <(grep -a "component=pool" "$BUFFER_FILE" 2>/dev/null | tail -n 100)
+done
 
 # Record current size — only process lines written AFTER this point.
 # This prevents replaying old buffer content on miner restart.
