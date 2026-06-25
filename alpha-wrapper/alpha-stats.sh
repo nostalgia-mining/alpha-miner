@@ -335,8 +335,8 @@ collect_ping() {
 #   7 spaces + "Pool" (4) + " : " = 14 chars before value
 #   Format: "%-7s%4s : %-s" padded to 45 chars
 #
-GPU_ROW_FMT="%2s %-18.18s %-13s %-10s %-6s %-10s  %s   %-4s  %-5s %-5s"
-HDR_ROW_FMT="%2s %-18s  %-13s %-10s %-6s %-10s  %s   %-4s  %-5s %-5s"
+GPU_ROW_FMT="%2s %-18.18s  %12s  %-10s %-6s %-10s  %s   %-4s  %-5s %-5s"
+HDR_ROW_FMT="%2s %-18s   %-12s  %-10s %-6s %-10s  %s   %-4s  %-5s %-5s"
 
 render() {
     local ts; ts="[$(date +'%H:%M:%S')]"
@@ -393,7 +393,7 @@ render() {
     local total_eff; total_eff="$(fmt_eff "$TOTAL_HASH_RAW" "$TOTAL_WATTS")"
     local total_sh="${TOTAL_ACC}/${TOTAL_REJ}"
     local total_row
-    printf -v total_row "   %-18s %-13s %-10s %-6s %-10s" \
+    printf -v total_row "   %-18s  %12s  %-10s %-6s %-10s" \
         "Total" "$total_hr" "$total_sh" "$TOTAL_WATTS" "$total_eff"
     tprint "${G}${ts} ${total_row}${R}"
 
