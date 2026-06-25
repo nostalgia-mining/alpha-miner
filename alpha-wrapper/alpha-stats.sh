@@ -14,7 +14,7 @@ POOL_HOST="${POOL_HOST:-alphapool.tech:5566}"
 
 STATS_INTERVAL=30
 MAX_SAMPLES=6
-HSTATS_RAW_LINES=2000
+HSTATS_RAW_LINES=6000
 
 # TTF formula derivation:
 # Reference: 14453 shares/day @ 376.68 TH/s @ diff 524288
