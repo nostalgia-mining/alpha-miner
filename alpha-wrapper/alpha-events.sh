@@ -65,6 +65,14 @@ for idx in ${GPU_LIST//,/ }; do
         diff="${diff%.00}"
         [[ -n "$diff" ]] && GPU_DIFF[$idx]="$diff"
     fi
+
+    # Initialize LAST_HITS_COUNT from the most recent status line so the
+    # first status line processed doesn't spuriously queue N hit timestamps.
+    last_status=$(grep -a "component=miner status" "$BUFFER_FILE" 2>/dev/null \
+        | grep -a " gpu=${idx}:" | tail -n 1)
+    if [[ -n "$last_status" ]]; then
+        [[ "$last_status" =~ [[:space:]]hits=([0-9]+) ]] && LAST_HITS_COUNT[$idx]="${BASH_REMATCH[1]}"
+    fi
 done
 
 # Record current size — only process lines written AFTER this point.
@@ -192,11 +200,12 @@ while true; do
         current_offset=$local_size
     fi
     if (( local_size > current_offset )); then
-        # Read only the new bytes
-        dd if="$BUFFER_FILE" bs=1 skip="$current_offset" 2>/dev/null | \
+        # Read only the new bytes — use process substitution (not pipe) to
+        # avoid a subshell, so variable updates (GPU_HIT_QUEUE, LAST_HITS_COUNT)
+        # persist across poll cycles.
         while IFS= read -r line; do
             process_line "$line"
-        done
+        done < <(tail -c +$((current_offset + 1)) "$BUFFER_FILE" 2>/dev/null)
         current_offset=$local_size
     fi
     sleep 0.5
