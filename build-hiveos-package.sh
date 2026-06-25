@@ -111,17 +111,33 @@ echo ""
 echo "Building tarball..."
 cd "$SCRIPT_DIR"
 
+# List all files that will be included
+WRAPPER_FILES=(
+    alpha-wrapper/alpha
+    alpha-wrapper/h-manifest.conf
+    alpha-wrapper/h-config.sh
+    alpha-wrapper/h-run.sh
+    alpha-wrapper/h-stats.sh
+    alpha-wrapper/alpha-supervise.sh
+    alpha-wrapper/alpha-stats.sh
+    alpha-wrapper/alpha-events.sh
+    alpha-wrapper/miner.conf
+)
+
+# Verify every file exists before packaging
+echo "Verifying files..."
+for f in "${WRAPPER_FILES[@]}"; do
+    if [[ ! -f "$f" ]]; then
+        echo "ERROR: missing file: $f"
+        exit 1
+    fi
+    echo "  ok: $f"
+done
+
 # -p preserves permissions; --owner=0 --group=0 avoids embedding local uid/gid
 tar -czpf "$OUTPUT" \
     --owner=0 --group=0 \
-    alpha-wrapper/alpha \
-    alpha-wrapper/h-manifest.conf \
-    alpha-wrapper/h-config.sh \
-    alpha-wrapper/h-run.sh \
-    alpha-wrapper/h-stats.sh \
-    alpha-wrapper/alpha-supervise.sh \
-    alpha-wrapper/alpha-stats.sh \
-    alpha-wrapper/miner.conf
+    "${WRAPPER_FILES[@]}"
 
 # ---- Verify ------------------------------------------------------------------
 echo ""
