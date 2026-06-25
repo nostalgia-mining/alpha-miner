@@ -335,8 +335,8 @@ collect_ping() {
 #   7 spaces + "Pool" (4) + " : " = 14 chars before value
 #   Format: "%-7s%4s : %-s" padded to 45 chars
 #
-GPU_ROW_FMT="%2s %-18.18s  %12s  %-10s %-6s %-10s  %s   %-4s  %-5s %-5s"
-HDR_ROW_FMT="%2s %-18s   %-12s  %-10s %-6s %-10s  %s   %-4s  %-5s %-5s"
+GPU_ROW_FMT="%2s %-18.18s  %12s  %-10s %-6s %-10s  %s  %-4s %-5s %-5s"
+HDR_ROW_FMT="%2s %-18s   %-12s %-10s %-6s %-10s %s  %-4s %-5s %-5s"
 
 render() {
     local ts; ts="[$(date +'%H:%M:%S')]"
@@ -460,7 +460,7 @@ render() {
 
     _frow "Time to find" "$ttf_str"   "Pool" "$pool_disp"
     _frow "Last found"   "$last_str"  "Ping" "$ping_str"
-    _frow "Pool hashrate" "$pool_hr"  "Algo" "pearlhash"
+    _frow "Pool hashrate" "$pool_hr"   "Algo" "pearlhash"
 
     tprint "${G}${ts} ${BAR_DASH}${R}"
 }
