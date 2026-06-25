@@ -200,9 +200,7 @@ while :; do
         # dead-share timeout.
         if grep -qaE 'component=miner error=' "$BUFFER_FILE" 2>/dev/null; then
             # Only act on errors that appeared after this launch
-            local launch_ts
             launch_ts=$(date -u -d "@$launch" +%FT%TZ 2>/dev/null || date -u +%FT%TZ)
-            local err_line
             err_line=$(grep -aE 'component=miner error=' "$BUFFER_FILE" 2>/dev/null | tail -n1)
             if [[ -n "$err_line" ]]; then
                 echo "$(date -u +%FT%TZ) [wrapper] miner error detected — restarting: $err_line"
