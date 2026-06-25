@@ -64,6 +64,7 @@ declare -a EXTRA_ARGS=()
 declare -a WRAPPER_CFG=()
 WRAPPER_GPU_VAL=""
 WRAPPER_NOSTATS=0
+WRAPPER_EXTRALOGS=0
 WRAPPER_DIFF_VAL=""   # value from --diff (e.g. "524288" or "524288,262144")
 
 if [[ -n "${CUSTOM_USER_CONFIG:-}" ]]; then
@@ -81,6 +82,12 @@ if [[ -n "${CUSTOM_USER_CONFIG:-}" ]]; then
         # ---- --nostats -------------------------------------------------------
         if [[ "$tok" == "--nostats" ]]; then
             WRAPPER_NOSTATS=1
+            (( i++ )); continue
+        fi
+
+        # ---- --extralogs (symlink buffer to accessible log path) -------------
+        if [[ "$tok" == "--extralogs" ]]; then
+            WRAPPER_EXTRALOGS=1
             (( i++ )); continue
         fi
 
@@ -177,9 +184,10 @@ BASE_ARGS+=( "${EXTRA_ARGS[@]}" )
     for a in "${BASE_ARGS[@]}"; do printf ' %q' "$a"; done
     printf ' )\n'
     for kv in "${WRAPPER_CFG[@]}"; do printf '%s\n' "$kv"; done
-    printf 'WRAPPER_GPU_LIST=%q\n'  "${WRAPPER_GPU_VAL:-all}"
-    printf 'WRAPPER_NOSTATS=%q\n'   "$WRAPPER_NOSTATS"
-    printf 'WRAPPER_PASSWORD=%q\n'  "$pass"
+    printf 'WRAPPER_GPU_LIST=%q\n'   "${WRAPPER_GPU_VAL:-all}"
+    printf 'WRAPPER_NOSTATS=%q\n'    "$WRAPPER_NOSTATS"
+    printf 'WRAPPER_EXTRALOGS=%q\n'  "${WRAPPER_EXTRALOGS:-0}"
+    printf 'WRAPPER_PASSWORD=%q\n'   "$pass"
     printf 'POOL_URL=%q\n'          "${POOLS[0]}"
     printf 'WALLET=%q\n'            "$wallet"
     [[ -n "$worker" ]] && printf 'WORKER=%q\n' "$worker"

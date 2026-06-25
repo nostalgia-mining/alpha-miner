@@ -15,7 +15,12 @@ POOL_HOST="${POOL_HOST:-alphapool.tech:5566}"
 STATS_INTERVAL=30
 MAX_SAMPLES=6
 HSTATS_RAW_LINES=2000
-POOL_K="3132026.7"   # TTF = diff * K / hashrate_TH  (K = 86400*524288/14453)
+# TTF formula: TTF_seconds = diff / (hashrate_TH * RATE)
+# where RATE = 14453 shares/day / (86400 sec/day * 376.68 TH/s) = 0.0004442 shares/sec per TH/s
+# Equivalently: TTF = diff / hashrate_TH * (86400 * 376.68 / 14453)
+# But simpler: TTF = diff / (hashrate_TH * 0.0004442)
+# We store the divisor constant: POOL_RATE = 14453 / (86400 * 376.68)
+POOL_RATE="0.0004442"
 
 # ===== Colors =================================================================
 G=$'\e[32m'; R=$'\e[0m'; B=$'\e[1m'
@@ -142,10 +147,9 @@ trunc_wallet() {
 
 short_name() { sed -E 's/^NVIDIA GeForce //; s/^NVIDIA //'; }
 
-# Print line to stdout and append (ANSI-stripped) to log
+# Print line to stdout only — tee in h-run.sh handles the log file
 tprint() {
     printf '%s\n' "$1"
-    printf '%s\n' "$1" | sed 's/\x1b\[[0-9;]*m//g' >> "$LOG_FILE"
 }
 
 # ===== Diff per GPU from buffer ===============================================
@@ -322,7 +326,7 @@ collect_ping() {
 #   Format: "%-7s%4s : %-s" padded to 45 chars
 #
 GPU_ROW_FMT="%2s %-18.18s  %12s %-10s %-6s  %-9s   %s   %-4s  %-5s %-5s"
-HDR_ROW_FMT="%2s %-18s  %-12s %-10s %-6s  %-9s   %-5s   %-4s  %-5s %-5s"
+HDR_ROW_FMT="%2s %-18s  %-12s %-10s %-6s  %-10s  %s   %-4s  %-5s %-5s"
 
 render() {
     local ts; ts="[$(date +'%H:%M:%S')]"
@@ -416,8 +420,8 @@ render() {
     [[ "$diff_0" == "?" ]] && diff_0=524288
     local ttf_str="n/a" ttf_secs=0
     if (( TOTAL_HASH_RAW > 0 )); then
-        ttf_secs=$(awk -v d="$diff_0" -v k="$POOL_K" -v h="$TOTAL_HASH_RAW" \
-            'BEGIN{printf "%.0f", (d+0)*k/(h/1e12)}')
+        ttf_secs=$(awk -v d="$diff_0" -v r="$POOL_RATE" -v h="$TOTAL_HASH_RAW" \
+            'BEGIN{printf "%.0f", d / ((h/1e12) * r)}')
         ttf_str="$(fmt_ttf "$ttf_secs")"
     fi
 
@@ -436,7 +440,10 @@ render() {
     _frow() {
         local ll="$1" lv="$2" rl="$3" rv="$4"
         local lc rc
-        printf -v lc '%8s%12s : %-22s' '' "$ll" "$lv"
+        # Left pane (45 chars): 8 leading spaces + label right-aligned in 13 + " : " + value in 21
+        # 8 + 13 + 3 + 21 = 45 ✓
+        # "Pool hashrate" = 13 chars → exactly fills label field
+        printf -v lc '%8s%13s : %-21s' '' "$ll" "$lv"
         printf -v rc '%7s%4s : %-31s'  '' "$rl" "$rv"
         tprint "${G}${ts} ${lc}|${rc}${R}"
     }

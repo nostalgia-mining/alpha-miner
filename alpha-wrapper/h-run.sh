@@ -76,6 +76,19 @@ echo "$GPU_LIST" > "$GPU_LIST_FILE"
 export CUDA_DEVICE_ORDER=PCI_BUS_ID
 
 # ============================================================================
+# --extralogs: symlink the RAM buffer to an accessible log path so you can
+# tail it from HiveOS or a shell for debugging.
+# Access via: tail -f /var/log/miner/custom/alpha-wrapper-raw.log
+# ============================================================================
+RAW_LOG="/var/log/miner/custom/alpha-wrapper-raw.log"
+if [[ "${WRAPPER_EXTRALOGS:-0}" == "1" ]]; then
+    ln -sf "$BUFFER_FILE" "$RAW_LOG" 2>/dev/null
+    echo "[$(date +'%H:%M:%S')] [INFO]  Extra logs enabled → tail -f $RAW_LOG"
+else
+    rm -f "$RAW_LOG" 2>/dev/null
+fi
+
+# ============================================================================
 # Pool host for display (first pool, strip stratum+tcp:// prefix)
 # ============================================================================
 POOL_HOST="${POOLS[0]:-alphapool.tech:5566}"
