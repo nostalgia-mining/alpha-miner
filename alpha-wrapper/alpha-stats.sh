@@ -15,16 +15,22 @@ POOL_HOST="${POOL_HOST:-alphapool.tech:5566}"
 STATS_INTERVAL=30
 MAX_SAMPLES=6
 HSTATS_RAW_LINES=2000
-# TTF formula: TTF_seconds = diff / (hashrate_TH * RATE)
-# where RATE = 14453 shares/day / (86400 sec/day * 376.68 TH/s) = 0.0004442 shares/sec per TH/s
-# Equivalently: TTF = diff / hashrate_TH * (86400 * 376.68 / 14453)
-# But simpler: TTF = diff / (hashrate_TH * 0.0004442)
-# We store the divisor constant: POOL_RATE = 14453 / (86400 * 376.68)
-POOL_RATE="0.004295"  # TTF = diff / (hashrate_TH * POOL_RATE)
-# Derivation: 14453 shares/day @ 376.68 TH/s @ diff 524288
-#   → TTF = diff × (1/0.16728 shares/sec) × (1/376.68 TH) / (hashrate/376.68) / (diff/524288)
-#   → TTF = diff × 2252.8 / (524288 × hashrate_TH)
-#   → TTF = diff / hashrate_TH × (2252.8/524288) = diff / hashrate_TH × 0.004295
+
+# TTF formula derivation:
+# Reference: 14453 shares/day @ 376.68 TH/s @ diff 524288
+#   shares/second = 14453 / 86400 = 0.16728 shares/sec
+#   seconds per share = 1 / 0.16728 = 5.98 sec at this hashrate/diff
+#   
+#   TTF_at_diff_d_and_rate_h = (d / 524288) × 5.98 × (376.68 / h)
+#                              = d × 5.98 × 376.68 / (524288 × h)
+#                              = d × 2252.8 / (524288 × h)
+#                              = (d / h) × (2252.8 / 524288)
+#                              = (d / h) × 0.004295597
+#
+# So: TTF_seconds = diff / hashrate_TH × 0.004295597
+#     But we want diff / (hashrate_TH × RATE), so:
+#     RATE = 1 / 0.004295597 = 232.87
+POOL_RATE_DIVISOR="232.87"  # TTF = diff / (hashrate_TH × POOL_RATE_DIVISOR)
 
 # ===== Colors — all disabled for plain text output ============================
 G=''; R=''; B=''
@@ -329,8 +335,8 @@ collect_ping() {
 #   7 spaces + "Pool" (4) + " : " = 14 chars before value
 #   Format: "%-7s%4s : %-s" padded to 45 chars
 #
-GPU_ROW_FMT="%2s %-18.18s %12s %-11s %-6s %-10s  %s   %-4s  %-5s %-5s"
-HDR_ROW_FMT="%2s %-18s  %-11s %-11s %-6s %-10s  %s   %-4s  %-5s %-5s"
+GPU_ROW_FMT="%2s %-18.18s %-13s %-10s %-6s %-10s  %s   %-4s  %-5s %-5s"
+HDR_ROW_FMT="%2s %-18s  %-13s %-10s %-6s %-10s  %s   %-4s  %-5s %-5s"
 
 render() {
     local ts; ts="[$(date +'%H:%M:%S')]"
@@ -387,7 +393,7 @@ render() {
     local total_eff; total_eff="$(fmt_eff "$TOTAL_HASH_RAW" "$TOTAL_WATTS")"
     local total_sh="${TOTAL_ACC}/${TOTAL_REJ}"
     local total_row
-    printf -v total_row "   %-18s %12s %-11s %-6s %-10s" \
+    printf -v total_row "   %-18s %-13s %-10s %-6s %-10s" \
         "Total" "$total_hr" "$total_sh" "$TOTAL_WATTS" "$total_eff"
     tprint "${G}${ts} ${total_row}${R}"
 
@@ -424,8 +430,8 @@ render() {
     [[ "$diff_0" == "?" ]] && diff_0=524288
     local ttf_str="n/a" ttf_secs=0
     if (( TOTAL_HASH_RAW > 0 )); then
-        ttf_secs=$(awk -v d="$diff_0" -v r="$POOL_RATE" -v h="$TOTAL_HASH_RAW" \
-            'BEGIN{printf "%.0f", d / ((h/1e12) * r)}')
+        ttf_secs=$(awk -v d="$diff_0" -v rate="$POOL_RATE_DIVISOR" -v h="$TOTAL_HASH_RAW" \
+            'BEGIN{printf "%.0f", d / ((h/1e12) * rate)}')
         ttf_str="$(fmt_ttf "$ttf_secs")"
     fi
 

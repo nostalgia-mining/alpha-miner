@@ -82,14 +82,24 @@ start_buffer_writer() {
     local head_cnt_file="$BUFFER_DIR/.hc"
     echo 0 > "$cnt_file"
     echo 0 > "$head_cnt_file"
-    # Clear head file for this session
-    > "$HEAD_FILE"
+    # Clear head file for this session — prepopulate with wrapper startup banner
+    {
+        echo "========================================"
+        echo "$CUSTOM_NAME v$CUSTOM_VERSION  (failover supervisor, pid $$)"
+        echo "Pools (${#POOLS[@]}): ${POOLS[*]}"
+        echo "Base args: ${ALPHA_BASE_ARGS[*]}"
+        echo "Failover: grace=${FAILOVER_GRACE_SEC}s dead=${FAILOVER_DEAD_SEC}s return=${FAILOVER_RETURN_SEC}s"
+        echo "Buffer: $BUFFER_FILE (${BUFFER_LINES} lines cap)"
+        echo "========================================"
+    } > "$HEAD_FILE"
+    local hc=7  # 7 lines written above
+    echo "$hc" > "$head_cnt_file"
+    
     (
         while IFS= read -r line; do
             printf '%s\n' "$line" >> "$BUFFER_FILE"
 
             # Capture head (first HEAD_LINES lines only, once per session)
-            local hc
             hc=$(cat "$head_cnt_file" 2>/dev/null || echo 0)
             if (( hc < HEAD_LINES )); then
                 printf '%s\n' "$line" >> "$HEAD_FILE"
