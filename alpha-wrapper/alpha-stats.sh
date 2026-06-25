@@ -118,9 +118,9 @@ fmt_eff() {
 
 fmt_ttf() {
     awk -v s="$1" 'BEGIN{
-        if (s <= 0)    { printf "n/a"; next }
-        if (s < 60)    { printf "%.0f sec", s; next }
-        if (s < 3600)  { printf "%.1f min", s/60; next }
+        if (s <= 0)    { printf "n/a"; exit }
+        if (s < 60)    { printf "%.0f sec", s; exit }
+        if (s < 3600)  { printf "%.1f min", s/60; exit }
         printf "%.1f hr", s/3600
     }'
 }
@@ -193,7 +193,17 @@ collect_gpu_metrics() {
         [[ -z "$mclk"  ]] && mclk="n/a"
         [[ -z "$watts" || "$watts" == "N/A" ]] && watts=0
         watts=$(awk -v w="$watts" 'BEGIN{printf "%.1f", w+0}')
-        temp="${temp}°C"; fan="${fan}%"
+        # Build temp/fan strings with consistent visual width.
+        # °C is 2 bytes (UTF-8) but 1 visual char. printf %-5s counts bytes,
+        # so "80°C" (5 bytes) gets no padding. We pad manually to 5 visual chars:
+        #   2-digit temp: "80°C " → 5 visual chars (6 bytes for printf)
+        #   3-digit temp: "100°C" → 5 visual chars (6 bytes for printf)
+        if [[ -n "$temp" && "$temp" =~ ^[0-9]+$ ]] && (( temp < 100 )); then
+            temp="${temp}°C "
+        else
+            temp="${temp}°C"
+        fi
+        fan="${fan}%"
 
         mapfile -t hash_samp < <(
             tail -n "$HSTATS_RAW_LINES" "$BUFFER_FILE" 2>/dev/null \
@@ -311,7 +321,7 @@ collect_ping() {
 #   7 spaces + "Pool" (4) + " : " = 14 chars before value
 #   Format: "%-7s%4s : %-s" padded to 45 chars
 #
-GPU_ROW_FMT="%2s %-18.18s  %12s %-10s %-6s  %-9s   %-5s   %-4s  %-5s %-5s"
+GPU_ROW_FMT="%2s %-18.18s  %12s %-10s %-6s  %-9s   %s   %-4s  %-5s %-5s"
 HDR_ROW_FMT="%2s %-18s  %-12s %-10s %-6s  %-9s   %-5s   %-4s  %-5s %-5s"
 
 render() {
@@ -443,9 +453,9 @@ while [[ ! -f "$BUFFER_FILE" ]]; do sleep 2; done
 while ! grep -qa "component=miner status" "$BUFFER_FILE" 2>/dev/null; do sleep 2; done
 
 while true; do
+    sleep "$STATS_INTERVAL"
     collect_gpu_metrics
     collect_share_metrics
     collect_ping
     render
-    sleep "$STATS_INTERVAL"
 done
