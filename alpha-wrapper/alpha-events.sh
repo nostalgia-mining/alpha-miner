@@ -50,8 +50,8 @@ ts_to_ms() {
 while [[ ! -f "$BUFFER_FILE" ]]; do sleep 1; done
 
 # Initialize GPU_DIFF from existing buffer content (for restarts)
-# Search the ENTIRE buffer, not just last 500 lines, because difficulty_set
-# may be thousands of lines back in a long-running miner session.
+# Search the ENTIRE buffer for the MOST RECENT difficulty per GPU.
+# Use tail to get last occurrence per GPU to handle rolling buffer with mixed sessions.
 while IFS= read -r line; do
     [[ "$line" =~ [[:space:]]component=pool ]] || continue
     gpu_raw="" gpu_idx="" diff=""
@@ -65,7 +65,7 @@ while IFS= read -r line; do
         diff="${diff%.00}"
         [[ -n "$diff" ]] && GPU_DIFF[$gpu_idx]="$diff"
     fi
-done < <(grep -a "component=pool" "$BUFFER_FILE" 2>/dev/null)
+done < <(grep -a "component=pool" "$BUFFER_FILE" 2>/dev/null | tail -n 100)
 
 # Record current size — only process lines written AFTER this point.
 # This prevents replaying old buffer content on miner restart.
