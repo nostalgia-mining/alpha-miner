@@ -9,10 +9,9 @@ This fork adds an enhanced HiveOS wrapper with:
 
 - ✅ `--gpu` alias for `--devices` — use either flag to select GPUs
 - ✅ Pool URL driven entirely by the HiveOS **Pool URL** field — no hardcoded endpoints
-- ✅ Difficulty driven entirely by the HiveOS **Password** field — set whatever `x;d=N` you want
+- ✅ `--diff` to set a static difficulty (comma separated per GPU) - e.g. `--diff 524288,262144,1048576,524288`
 - ✅ On-screen stats table (`alpha-stats.sh`) — per-GPU hashrate, watt, temp, fan, clock, shares
 - ✅ Multi-pool failover via the supervisor (comma-separate pools in the Pool URL field)
-- ✅ No donation feature
 
 ---
 
@@ -20,12 +19,12 @@ This fork adds an enhanced HiveOS wrapper with:
 
 | Field | Value |
 |---|---|
-| Installation URL | `https://github.com/nostalgia-mining/alpha-miner/releases/download/v1.8.3-hiveos/alpha-V1.8.3-hiveos-wrapper.tar.gz` |
-| Miner name | `alpha` |
+| Installation URL | `https://github.com/nostalgia-mining/alpha-miner/releases/download/v1.8.3-hiveos/alpha-wrapper-V1.8.3.tar.gz` |
+| Miner name | `alpha-wrapper` |
 | Hash algorithm | `pearlhash` |
 | Wallet template | `%WAL%.%WORKER_NAME%` |
-| Pool URL | `stratum+tcp://us1.alphapool.tech:5566` *(or any region, comma-separate for failover)* |
-| Password | `x;d=524288` *(or any difficulty value you prefer)* |
+| Pool URL | `stratum+tcp://%URL%` *(set pool endpoints directly in HiveOS Flight Sheet via Configure pool)* |
+| Password | `x` *(remember to set static difficulty via --diff in extra parameters)* |
 
 ### Extra config arguments (all optional)
 
@@ -47,8 +46,7 @@ This fork adds an enhanced HiveOS wrapper with:
 > `--gpu` is a wrapper alias that gets translated to `--devices` before being passed to the binary.  
 > You can use either — they are interchangeable.
 
-> **Note on Password / difficulty:** The HiveOS Password field is passed directly to the miner as `--password`.  
-> Set it to `x;d=262144`, `x;d=524288`, or any value you prefer. Leave it empty to use vardiff.
+> **Note on Password / difficulty:** Use `--diff N` in Extra config to set static difficulty — it's cleaner and takes precedence over whatever is in the Password field. If you prefer the raw format, set the Password field to `x;d=262144`, `x;d=524288`, etc. Leave the Password field empty (or just `x`) to use vardiff.
 
 ---
 
@@ -71,14 +69,15 @@ This fork adds an enhanced HiveOS wrapper with:
 ## Wrapper file overview
 
 ```
-alpha/
-├── alpha                  ← miner binary (not in repo — downloaded via Installation URL)
+alpha-wrapper/
+├── alpha                  ← miner binary (not in repo — downloaded via build-hiveos-package.sh)
 ├── h-manifest.conf        ← miner name, version, paths, API port
 ├── h-config.sh            ← flight-sheet → miner.conf translation
 ├── h-run.sh               ← GPU validation, stats helper launch, → supervisor
 ├── h-stats.sh             ← HiveOS dashboard JSON (kH/s per GPU, shares, temp/fan)
 ├── alpha-supervise.sh     ← multi-pool failover supervisor (long-lived process)
-├── alpha-stats.sh         ← on-screen stats table (printed every 3 min)
+├── alpha-stats.sh         ← on-screen stats table (printed every 30 seconds)
+├── alpha-events.sh        ← real-time event printer (shares, jobs, pool events)
 └── miner.conf             ← generated at runtime by h-config.sh
 ```
 
