@@ -180,7 +180,15 @@ process_line() {
         (( ping_ms > 0 )) && ping_str="${ping_ms} ms"
         log_print "[${hhmm}] GPU ${gpu_idx} Share accepted   ping=${ping_str}   diff=${diff}   job=${short_job}   [${local_acc}/${local_rej}]"
 
-    elif [[ "$component" == "share" ]] && [[ "$line" =~ "rejected" ]]; then
+    elif [[ "$component" == "share" ]] && [[ "$line" =~ "rejected" || "$line" =~ "dropped" ]]; then
+        # Pop from hit queue to keep it in sync (same as accepted, but no ping)
+        if [[ -n "${GPU_HIT_QUEUE[$gpu_idx]:-}" ]]; then
+            local queue="${GPU_HIT_QUEUE[$gpu_idx]}"
+            local _discard
+            read -r _discard queue <<< "$queue"
+            GPU_HIT_QUEUE[$gpu_idx]="$queue"
+        fi
+
         local local_acc=0 local_rej=0
         local last_stat
         last_stat=$(tail -n 100 "$BUFFER_FILE" 2>/dev/null \
@@ -189,7 +197,9 @@ process_line() {
         [[ "$last_stat" =~ [[:space:]]accepted=([0-9]+) ]] && local_acc="${BASH_REMATCH[1]}"
         [[ "$last_stat" =~ [[:space:]]rejected=([0-9]+) ]] && local_rej="${BASH_REMATCH[1]}"
         local diff="${GPU_DIFF[$gpu_idx]:-?}"
-        log_print "[${hhmm}] GPU ${gpu_idx} Share REJECTED              diff=${diff}              [${local_acc}/${local_rej}]"
+        local label="REJECTED"
+        [[ "$line" =~ "dropped" ]] && label="DROPPED"
+        log_print "[${hhmm}] GPU ${gpu_idx} Share ${label}              diff=${diff}              [${local_acc}/${local_rej}]"
     fi
 }
 
