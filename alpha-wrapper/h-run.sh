@@ -26,8 +26,8 @@ mkdir -p /var/run/hive 2>/dev/null
 mkdir -p "$BUFFER_DIR"  2>/dev/null
 touch "$BUFFER_FILE"    2>/dev/null
 
-# Wrapper's own startup messages go to screen and persistent log
-exec > >(exec tee -a "$LOG") 2>&1
+# Wrapper's own startup messages go to screen and persistent log (ANSI stripped for log)
+exec > >(tee >(sed 's/\x1b\[[0-9;]*m//g' >> "$LOG")) 2>&1
 
 echo "--------------------------------------------------------------------"
 echo "AlphaMiner PEARL v${CUSTOM_VERSION} -- HiveOS Wrapper"

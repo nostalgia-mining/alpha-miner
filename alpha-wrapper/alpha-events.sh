@@ -23,11 +23,9 @@ RD=$'\e[31m'  # red
 W=$'\e[97m'   # bright white
 B=$'\e[1m'    # bold
 
-# Helper: print to stdout and append (ANSI-stripped) to log
+# Helper: print to stdout only (h-run.sh tee strips ANSI and writes to log)
 log_print() {
-    local line="$1"
-    printf '%s\n' "$line"
-    printf '%s\n' "$line" | sed 's/\x1b\[[0-9;]*m//g' >> "$LOG_FILE"
+    printf '%s\n' "$1"
 }
 
 # ===== State per GPU ==========================================================

@@ -20,7 +20,11 @@ HSTATS_RAW_LINES=2000
 # Equivalently: TTF = diff / hashrate_TH * (86400 * 376.68 / 14453)
 # But simpler: TTF = diff / (hashrate_TH * 0.0004442)
 # We store the divisor constant: POOL_RATE = 14453 / (86400 * 376.68)
-POOL_RATE="0.0004442"
+POOL_RATE="0.004295"  # TTF = diff / (hashrate_TH * POOL_RATE)
+# Derivation: 14453 shares/day @ 376.68 TH/s @ diff 524288
+#   → TTF = diff × (1/0.16728 shares/sec) × (1/376.68 TH) / (hashrate/376.68) / (diff/524288)
+#   → TTF = diff × 2252.8 / (524288 × hashrate_TH)
+#   → TTF = diff / hashrate_TH × (2252.8/524288) = diff / hashrate_TH × 0.004295
 
 # ===== Colors =================================================================
 G=$'\e[32m'; R=$'\e[0m'; B=$'\e[1m'
