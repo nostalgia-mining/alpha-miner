@@ -291,7 +291,11 @@ upload_asset() {
     echo "  HTTP status: $http_code"
 
     local url
-    url=$(echo "$upload_response" | grep '"browser_download_url"' | grep -oE 'https://[^"]+')
+    url=$(echo "$upload_response" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('browser_download_url',''))" 2>/dev/null)
+    if [[ -z "$url" ]]; then
+        # fallback: grep for the specific field
+        url=$(echo "$upload_response" | grep -o '"browser_download_url":"[^"]*"' | cut -d'"' -f4)
+    fi
     if [[ -n "$url" ]]; then
         echo "  Uploaded: $url"
     else
