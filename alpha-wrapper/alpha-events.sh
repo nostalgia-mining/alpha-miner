@@ -29,8 +29,6 @@ log_print() {
 }
 
 # ===== State per GPU ==========================================================
-declare -A LAST_HITS_COUNT=()
-declare -A GPU_HIT_QUEUE=()  # Queue of hit timestamps per GPU (space-separated)
 declare -A GPU_DIFF=()
 LAST_JOB_ID=""
 LAST_POOL_HOST=""    # track reconnects
@@ -89,7 +87,15 @@ process_line() {
     [[ "$gpu_idx" == "system" || -z "$gpu_idx" ]] && gpu_idx="0"
     [[ "$line" =~ [[:space:]]component=([^[:space:]]+) ]] && component="${BASH_REMATCH[1]}"
 
-    local hhmm; hhmm="$(date +'%H:%M:%S')"
+    # Extract local time from log line timestamp (2026-06-25T14:17:08.839Z)
+    local hhmm
+    if [[ "$ts" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T([0-9]{2}:[0-9]{2}:[0-9]{2}) ]]; then
+        # Convert UTC timestamp to local time
+        local ts_epoch; ts_epoch=$(date -d "${ts}" +%s 2>/dev/null || echo 0)
+        hhmm=$(date -d "@${ts_epoch}" +'%H:%M:%S' 2>/dev/null || date +'%H:%M:%S')
+    else
+        hhmm="$(date +'%H:%M:%S')"
+    fi
 
     if [[ "$component" == "pool" ]]; then
         if [[ "$line" =~ [[:space:]]connected[[:space:]] && "$line" =~ host= ]]; then
@@ -126,34 +132,39 @@ process_line() {
             fi
         fi
 
-    elif [[ "$component" == "miner" ]] && [[ "$line" =~ [[:space:]]"status"[[:space:]] ]]; then
-        local hits=0
-        [[ "$line" =~ [[:space:]]hits=([0-9]+) ]] && hits="${BASH_REMATCH[1]}"
-        local prev="${LAST_HITS_COUNT[$gpu_idx]:-0}"
-        if (( hits > prev )); then
-            local hit_ts_ms; hit_ts_ms="$(ts_to_ms "$ts")"
-            # Add new hit timestamp(s) to the queue
-            local new_hits=$(( hits - prev ))
-            for (( i=0; i<new_hits; i++ )); do
-                GPU_HIT_QUEUE[$gpu_idx]="${GPU_HIT_QUEUE[$gpu_idx]:-} $hit_ts_ms"
-            done
-            LAST_HITS_COUNT[$gpu_idx]="$hits"
-        fi
-
     elif [[ "$component" == "share" ]] && [[ "$line" =~ "accepted" ]]; then
         local job_id=""
         [[ "$line" =~ [[:space:]]job=([^[:space:]]+) ]] && job_id="${BASH_REMATCH[1]}"
         local ping_ms=0
         local accepted_ms; accepted_ms="$(ts_to_ms "$ts")"
         
-        # Pop the oldest hit timestamp from the queue for this GPU
-        if [[ -n "${GPU_HIT_QUEUE[$gpu_idx]:-}" ]]; then
-            local queue="${GPU_HIT_QUEUE[$gpu_idx]}"
-            local hit_ts_ms
-            read -r hit_ts_ms queue <<< "$queue"
-            GPU_HIT_QUEUE[$gpu_idx]="$queue"
+        # Find the most recent hit timestamp before this acceptance (same logic as alpha-stats.sh)
+        # Search backwards through recent status lines to find when hits incremented
+        local hit_ts_ms=0
+        local recent_status
+        recent_status=$(tail -n 200 "$BUFFER_FILE" 2>/dev/null | grep -a "component=miner status" | grep " gpu=${gpu_idx}:")
+        
+        if [[ -n "$recent_status" ]]; then
+            local prev_hits=0
+            local found_hit_ts=""
+            while IFS= read -r status_line; do
+                local s_ts="${status_line%% *}"
+                local s_hits=0
+                [[ "$status_line" =~ [[:space:]]hits=([0-9]+) ]] && s_hits="${BASH_REMATCH[1]}"
+                
+                # Check if this status line is before the acceptance
+                local s_ms; s_ms="$(ts_to_ms "$s_ts")"
+                (( s_ms >= accepted_ms )) && continue
+                
+                # Track hit increments
+                if (( s_hits > prev_hits )); then
+                    found_hit_ts="$s_ts"
+                fi
+                prev_hits="$s_hits"
+            done <<< "$recent_status"
             
-            if [[ -n "$hit_ts_ms" && "$hit_ts_ms" =~ ^[0-9]+$ ]]; then
+            if [[ -n "$found_hit_ts" ]]; then
+                hit_ts_ms="$(ts_to_ms "$found_hit_ts")"
                 ping_ms=$(( accepted_ms - hit_ts_ms ))
                 (( ping_ms < 0 || ping_ms > 60000 )) && ping_ms=0
             fi
@@ -192,8 +203,8 @@ while true; do
         current_offset=$local_size
     fi
     if (( local_size > current_offset )); then
-        # Read only the new bytes
-        dd if="$BUFFER_FILE" bs=1 skip="$current_offset" 2>/dev/null | \
+        # Read only the new bytes (tail -c + is 1-indexed)
+        tail -c +$((current_offset + 1)) "$BUFFER_FILE" 2>/dev/null | \
         while IFS= read -r line; do
             process_line "$line"
         done
