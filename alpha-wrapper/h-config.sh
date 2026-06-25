@@ -167,7 +167,6 @@ pass="${CUSTOM_PASS:-}"
 if [[ -n "$WRAPPER_DIFF_VAL" ]]; then
     # --diff takes precedence; build password string
     pass="x;d=${WRAPPER_DIFF_VAL}"
-    echo "  Difficulty (--diff): $WRAPPER_DIFF_VAL → --password '$pass'"
 fi
 
 [[ -n "$pass" ]] && BASE_ARGS+=( --password "$pass" )
@@ -192,12 +191,5 @@ BASE_ARGS+=( "${EXTRA_ARGS[@]}" )
     printf 'WALLET=%q\n'            "$wallet"
     [[ -n "$worker" ]] && printf 'WORKER=%q\n' "$worker"
 } > "$conf_file"
-
-echo "AlphaMiner config written to $conf_file"
-echo "  Pools  (${#POOLS[@]}): ${POOLS[*]}"
-echo "  Base args          : ${BASE_ARGS[*]}"
-echo "  GPU selection      : ${WRAPPER_GPU_VAL:-all}"
-echo "  On-screen stats    : $(( ! WRAPPER_NOSTATS )) (1=enabled)"
-[[ ${#WRAPPER_CFG[@]} -gt 0 ]] && echo "  Wrapper cfg        : ${WRAPPER_CFG[*]}"
 
 return 0 2>/dev/null || exit 0
