@@ -326,3 +326,26 @@ echo ""
 echo "HiveOS Flight Sheet — Installation URL:"
 echo "  https://github.com/${REPO}/releases/download/${TAG}/alpha-wrapper-V${VERSION}.tar.gz"
 echo ""
+
+# ---- Clean HiveOS cached installation so it re-downloads on next start ------
+echo "Cleaning HiveOS cached installation..."
+HIVE_MINER_DIR="/hive/miners/custom/alpha-wrapper"
+HIVE_DOWNLOAD="/hive/miners/custom/downloads/alpha-wrapper-V${VERSION}.tar.gz"
+
+if [[ -d "$HIVE_MINER_DIR" ]]; then
+    rm -rf "$HIVE_MINER_DIR"
+    echo "  Removed: $HIVE_MINER_DIR"
+else
+    echo "  Not found (skip): $HIVE_MINER_DIR"
+fi
+
+if [[ -f "$HIVE_DOWNLOAD" ]]; then
+    rm -f "$HIVE_DOWNLOAD"
+    echo "  Removed: $HIVE_DOWNLOAD"
+else
+    echo "  Not found (skip): $HIVE_DOWNLOAD"
+fi
+
+echo ""
+echo "HiveOS will re-download and reinstall the wrapper on next miner start."
+echo ""
