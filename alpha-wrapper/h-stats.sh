@@ -14,7 +14,10 @@
 [[ -f "$SCRIPT_PATH/h-manifest.conf" ]] && source "$SCRIPT_PATH/h-manifest.conf"
 [[ -f "$SCRIPT_PATH/miner.conf" ]]      && source "$SCRIPT_PATH/miner.conf"
 
-log_file="$CUSTOM_LOG_BASENAME.log"
+# The miner's raw output (status lines, share events) goes to the RAM buffer,
+# NOT the persistent log. h-stats.sh must read from the buffer.
+BUFFER_FILE="/run/alpha-wrapper/miner-raw.buf"
+log_file="$BUFFER_FILE"
 : "${REPORT_METRIC:=raw}"
 : "${HSTATS_RAW_LINES:=6000}"
 
@@ -24,7 +27,11 @@ case "$REPORT_METRIC" in
 esac
 
 if [[ ! -f "$log_file" ]]; then
-    echo "null"; exit 0
+    # Fall back to persistent log in case buffer doesn't exist yet
+    log_file="${CUSTOM_LOG_BASENAME}.log"
+    if [[ ! -f "$log_file" ]]; then
+        echo "null"; exit 0
+    fi
 fi
 
 khs=0; acc=0; rej=0; uptime_sec=0; gpu_count=0
