@@ -159,21 +159,123 @@ echo "Checksum saved to: alpha-wrapper-V${VERSION}.sha256"
 # ---- Next steps --------------------------------------------------------------
 echo ""
 echo "================================================"
-echo " Next steps"
+echo " GitHub Release"
 echo "================================================"
 echo ""
-echo "1. Create a GitHub Release:"
-echo "   https://github.com/nostalgia-mining/alpha-miner/releases/new"
-echo "   Tag     : v${VERSION}-hiveos"
-echo "   Title   : HiveOS wrapper v${VERSION}"
+echo "Upload the package to GitHub Releases using the API."
+echo "You need a GitHub Personal Access Token with 'repo' scope."
+echo "(Create one at: https://github.com/settings/tokens)"
 echo ""
-echo "2. Attach these files to the release:"
-echo "   - $OUTPUT"
-echo "   - alpha-wrapper-V${VERSION}.sha256"
+
+# Try to load saved token
+TOKEN_FILE="$HOME/.alpha-wrapper-gh-token"
+GH_TOKEN=""
+if [[ -f "$TOKEN_FILE" ]]; then
+    GH_TOKEN=$(cat "$TOKEN_FILE")
+    echo "Using saved token from $TOKEN_FILE"
+fi
+
+if [[ -z "$GH_TOKEN" ]]; then
+    read -rsp "GitHub Token (input hidden): " GH_TOKEN
+    echo ""
+    if [[ -n "$GH_TOKEN" ]]; then
+        read -rp "Save token for future builds? [y/N]: " SAVE_TOKEN
+        if [[ "${SAVE_TOKEN,,}" == "y" ]]; then
+            echo "$GH_TOKEN" > "$TOKEN_FILE"
+            chmod 600 "$TOKEN_FILE"
+            echo "Token saved to $TOKEN_FILE"
+        fi
+    fi
+fi
+
+if [[ -z "$GH_TOKEN" ]]; then
+    echo "No token provided — skipping GitHub upload."
+    echo ""
+    echo "Manual steps:"
+    echo "  1. Go to: https://github.com/nostalgia-mining/alpha-miner/releases/new"
+    echo "  2. Tag: v${VERSION}-hiveos"
+    echo "  3. Upload: $OUTPUT"
+    echo "  4. Upload: alpha-wrapper-V${VERSION}.sha256"
+    echo ""
+    exit 0
+fi
+
+REPO="nostalgia-mining/alpha-miner"
+TAG="v${VERSION}-hiveos"
+RELEASE_TITLE="HiveOS wrapper v${VERSION}"
+RELEASE_NOTES="HiveOS wrapper v${VERSION} — see README for flight sheet setup."
+
 echo ""
-echo "3. HiveOS Flight Sheet — Installation URL:"
-echo "   https://github.com/nostalgia-mining/alpha-miner/releases/download/v${VERSION}-hiveos/alpha-wrapper-V${VERSION}.tar.gz"
+echo "Creating GitHub Release ${TAG}..."
+
+# Check if release already exists
+EXISTING=$(curl -sf \
+    -H "Authorization: token $GH_TOKEN" \
+    -H "Accept: application/vnd.github+json" \
+    "https://api.github.com/repos/${REPO}/releases/tags/${TAG}" 2>/dev/null \
+    | grep '"id"' | head -1 | grep -oE '[0-9]+')
+
+if [[ -n "$EXISTING" ]]; then
+    echo "Release ${TAG} already exists (id=${EXISTING}) — will upload assets to it."
+    RELEASE_ID="$EXISTING"
+else
+    # Create the release
+    RESPONSE=$(curl -sf \
+        -H "Authorization: token $GH_TOKEN" \
+        -H "Accept: application/vnd.github+json" \
+        -H "Content-Type: application/json" \
+        -X POST \
+        "https://api.github.com/repos/${REPO}/releases" \
+        -d "{
+            \"tag_name\": \"${TAG}\",
+            \"name\": \"${RELEASE_TITLE}\",
+            \"body\": \"${RELEASE_NOTES}\",
+            \"draft\": false,
+            \"prerelease\": false
+        }" 2>/dev/null)
+
+    RELEASE_ID=$(echo "$RESPONSE" | grep '"id"' | head -1 | grep -oE '[0-9]+')
+
+    if [[ -z "$RELEASE_ID" ]]; then
+        echo "ERROR: Failed to create release. Response:"
+        echo "$RESPONSE"
+        exit 1
+    fi
+    echo "Release created (id=${RELEASE_ID})"
+fi
+
+# Upload assets
+upload_asset() {
+    local filepath="$1"
+    local filename; filename=$(basename "$filepath")
+    echo ""
+    echo "Uploading ${filename}..."
+    UPLOAD_RESPONSE=$(curl -sf \
+        -H "Authorization: token $GH_TOKEN" \
+        -H "Accept: application/vnd.github+json" \
+        -H "Content-Type: application/octet-stream" \
+        -X POST \
+        "https://uploads.github.com/repos/${REPO}/releases/${RELEASE_ID}/assets?name=${filename}" \
+        --data-binary "@${filepath}" 2>/dev/null)
+
+    local url
+    url=$(echo "$UPLOAD_RESPONSE" | grep '"browser_download_url"' | grep -oE 'https://[^"]+')
+    if [[ -n "$url" ]]; then
+        echo "  Uploaded: $url"
+    else
+        echo "  WARNING: Upload may have failed. Response:"
+        echo "$UPLOAD_RESPONSE"
+    fi
+}
+
+upload_asset "$OUTPUT"
+upload_asset "$SCRIPT_DIR/alpha-wrapper-V${VERSION}.sha256"
+
 echo ""
-echo "4. Commit and push the updated scripts if you made any changes:"
-echo "   git add -A && git commit -m 'fix: ...' && git push origin main"
+echo "================================================"
+echo " Done!"
+echo "================================================"
+echo ""
+echo "HiveOS Flight Sheet — Installation URL:"
+echo "  https://github.com/${REPO}/releases/download/${TAG}/alpha-wrapper-V${VERSION}.tar.gz"
 echo ""
