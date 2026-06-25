@@ -458,9 +458,10 @@ while [[ ! -f "$BUFFER_FILE" ]]; do sleep 2; done
 while ! grep -qa "component=miner status" "$BUFFER_FILE" 2>/dev/null; do sleep 2; done
 
 while true; do
-    sleep "$STATS_INTERVAL"
+    sleep $(( STATS_INTERVAL - 4 ))   # wait most of the interval
+    collect_ping                       # TCP ping (up to 3 sec timeout)
+    sleep 1                            # buffer before render
     collect_gpu_metrics
     collect_share_metrics
-    collect_ping
     render
 done
