@@ -250,6 +250,25 @@ upload_asset() {
     local filename; filename=$(basename "$filepath")
     echo ""
     echo "Uploading ${filename}..."
+
+    # Delete existing asset with the same name if it exists (allows re-upload)
+    local existing_asset_id
+    existing_asset_id=$(curl -sf \
+        -H "Authorization: token $GH_TOKEN" \
+        -H "Accept: application/vnd.github+json" \
+        "https://api.github.com/repos/${REPO}/releases/${RELEASE_ID}/assets" 2>/dev/null \
+        | grep -A1 "\"name\": \"${filename}\"" \
+        | grep '"id"' | grep -oE '[0-9]+')
+
+    if [[ -n "$existing_asset_id" ]]; then
+        echo "  Removing existing asset (id=${existing_asset_id})..."
+        curl -sf \
+            -H "Authorization: token $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -X DELETE \
+            "https://api.github.com/repos/${REPO}/releases/assets/${existing_asset_id}" 2>/dev/null
+    fi
+
     UPLOAD_RESPONSE=$(curl -sf \
         -H "Authorization: token $GH_TOKEN" \
         -H "Accept: application/vnd.github+json" \
@@ -263,8 +282,9 @@ upload_asset() {
     if [[ -n "$url" ]]; then
         echo "  Uploaded: $url"
     else
-        echo "  WARNING: Upload may have failed. Response:"
+        echo "  ERROR: Upload failed. Response:"
         echo "$UPLOAD_RESPONSE"
+        exit 1
     fi
 }
 
