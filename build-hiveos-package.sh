@@ -251,39 +251,52 @@ upload_asset() {
     echo ""
     echo "Uploading ${filename}..."
 
-    # Delete existing asset with the same name if it exists (allows re-upload)
-    local existing_asset_id
-    existing_asset_id=$(curl -sf \
+    # List existing assets on this release
+    local assets_json
+    assets_json=$(curl -s \
         -H "Authorization: token $GH_TOKEN" \
         -H "Accept: application/vnd.github+json" \
-        "https://api.github.com/repos/${REPO}/releases/${RELEASE_ID}/assets" 2>/dev/null \
-        | grep -A1 "\"name\": \"${filename}\"" \
-        | grep '"id"' | grep -oE '[0-9]+')
+        "https://api.github.com/repos/${REPO}/releases/${RELEASE_ID}/assets")
 
-    if [[ -n "$existing_asset_id" ]]; then
-        echo "  Removing existing asset (id=${existing_asset_id})..."
-        curl -sf \
+    # Delete existing asset with the same name if it exists
+    local existing_id
+    existing_id=$(echo "$assets_json" \
+        | grep -B2 "\"name\": \"${filename}\"" \
+        | grep '"id":' | grep -oE '[0-9]+' | head -1)
+
+    if [[ -n "$existing_id" ]]; then
+        echo "  Removing existing asset (id=${existing_id})..."
+        local del_http
+        del_http=$(curl -s -o /dev/null -w "%{http_code}" \
             -H "Authorization: token $GH_TOKEN" \
             -H "Accept: application/vnd.github+json" \
             -X DELETE \
-            "https://api.github.com/repos/${REPO}/releases/assets/${existing_asset_id}" 2>/dev/null
+            "https://api.github.com/repos/${REPO}/releases/assets/${existing_id}")
+        echo "  Delete response: HTTP $del_http"
     fi
 
-    UPLOAD_RESPONSE=$(curl -sf \
+    echo "  Sending to GitHub upload API..."
+    local upload_response http_code
+    upload_response=$(curl -s -w "\nHTTP_CODE:%{http_code}" \
         -H "Authorization: token $GH_TOKEN" \
         -H "Accept: application/vnd.github+json" \
         -H "Content-Type: application/octet-stream" \
         -X POST \
         "https://uploads.github.com/repos/${REPO}/releases/${RELEASE_ID}/assets?name=${filename}" \
-        --data-binary "@${filepath}" 2>/dev/null)
+        --data-binary "@${filepath}")
+
+    http_code=$(echo "$upload_response" | grep "HTTP_CODE:" | grep -oE '[0-9]+')
+    upload_response=$(echo "$upload_response" | grep -v "HTTP_CODE:")
+
+    echo "  HTTP status: $http_code"
 
     local url
-    url=$(echo "$UPLOAD_RESPONSE" | grep '"browser_download_url"' | grep -oE 'https://[^"]+')
+    url=$(echo "$upload_response" | grep '"browser_download_url"' | grep -oE 'https://[^"]+')
     if [[ -n "$url" ]]; then
         echo "  Uploaded: $url"
     else
-        echo "  ERROR: Upload failed. Response:"
-        echo "$UPLOAD_RESPONSE"
+        echo "  ERROR: Upload failed. Full response:"
+        echo "$upload_response"
         exit 1
     fi
 }
