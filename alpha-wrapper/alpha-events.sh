@@ -144,7 +144,8 @@ process_line() {
         fi
         local local_acc=0 local_rej=0
         local last_stat
-        last_stat=$(grep -a "component=miner status" "$BUFFER_FILE" 2>/dev/null \
+        last_stat=$(tail -n 100 "$BUFFER_FILE" 2>/dev/null \
+            | grep -a "component=miner status" \
             | grep " gpu=${gpu_idx}:" | tail -n1)
         [[ "$last_stat" =~ [[:space:]]accepted=([0-9]+) ]] && local_acc="${BASH_REMATCH[1]}"
         [[ "$last_stat" =~ [[:space:]]rejected=([0-9]+) ]] && local_rej="${BASH_REMATCH[1]}"
@@ -157,7 +158,8 @@ process_line() {
     elif [[ "$component" == "share" ]] && [[ "$line" =~ "rejected" ]]; then
         local local_acc=0 local_rej=0
         local last_stat
-        last_stat=$(grep -a "component=miner status" "$BUFFER_FILE" 2>/dev/null \
+        last_stat=$(tail -n 100 "$BUFFER_FILE" 2>/dev/null \
+            | grep -a "component=miner status" \
             | grep " gpu=${gpu_idx}:" | tail -n1)
         [[ "$last_stat" =~ [[:space:]]accepted=([0-9]+) ]] && local_acc="${BASH_REMATCH[1]}"
         [[ "$last_stat" =~ [[:space:]]rejected=([0-9]+) ]] && local_rej="${BASH_REMATCH[1]}"
