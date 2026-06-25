@@ -327,7 +327,7 @@ GPU_ROW_FMT="%2s %-18.18s  %12s  %-10s %-6s %-10s  %s  %-4s %-5s %-5s"
 HDR_ROW_FMT="%2s %-18s   %-12s %-10s %-6s %-10s %s  %-4s %-5s %-5s"
 
 render() {
-    local ts; ts="[$(date +'%H:%M:%S')]"
+    local ts; ts="[$(date +'%Y-%m-%d %H:%M:%S')]"
     local up; up="$(uptime_str)"
     local wallet_s; wallet_s="$(trunc_wallet "$WALLET")"
 

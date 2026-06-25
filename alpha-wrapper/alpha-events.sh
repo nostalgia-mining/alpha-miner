@@ -97,7 +97,7 @@ process_line() {
     [[ "$gpu_idx" == "system" || -z "$gpu_idx" ]] && gpu_idx="0"
     [[ "$line" =~ [[:space:]]component=([^[:space:]]+) ]] && component="${BASH_REMATCH[1]}"
 
-    local hhmm; hhmm="$(date +'%H:%M:%S')"
+    local hhmm; hhmm="$(date +'%Y-%m-%d %H:%M:%S')"
 
     if [[ "$component" == "pool" ]]; then
         if [[ "$line" =~ [[:space:]]connected[[:space:]] && "$line" =~ host= ]]; then
