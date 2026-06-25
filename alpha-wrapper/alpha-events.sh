@@ -30,7 +30,7 @@ log_print() {
 
 # ===== State per GPU ==========================================================
 declare -A LAST_HITS_COUNT=()
-declare -A LAST_HITS_TS_MS=()
+declare -A GPU_HIT_QUEUE=()  # Queue of hit timestamps per GPU (space-separated)
 declare -A GPU_DIFF=()
 LAST_JOB_ID=""
 LAST_POOL_HOST=""    # track reconnects
@@ -131,7 +131,12 @@ process_line() {
         [[ "$line" =~ [[:space:]]hits=([0-9]+) ]] && hits="${BASH_REMATCH[1]}"
         local prev="${LAST_HITS_COUNT[$gpu_idx]:-0}"
         if (( hits > prev )); then
-            LAST_HITS_TS_MS[$gpu_idx]="$(ts_to_ms "$ts")"
+            local hit_ts_ms; hit_ts_ms="$(ts_to_ms "$ts")"
+            # Add new hit timestamp(s) to the queue
+            local new_hits=$(( hits - prev ))
+            for (( i=0; i<new_hits; i++ )); do
+                GPU_HIT_QUEUE[$gpu_idx]="${GPU_HIT_QUEUE[$gpu_idx]:-} $hit_ts_ms"
+            done
             LAST_HITS_COUNT[$gpu_idx]="$hits"
         fi
 
@@ -140,10 +145,20 @@ process_line() {
         [[ "$line" =~ [[:space:]]job=([^[:space:]]+) ]] && job_id="${BASH_REMATCH[1]}"
         local ping_ms=0
         local accepted_ms; accepted_ms="$(ts_to_ms "$ts")"
-        if [[ -n "${LAST_HITS_TS_MS[$gpu_idx]:-}" ]]; then
-            ping_ms=$(( accepted_ms - LAST_HITS_TS_MS[$gpu_idx] ))
-            (( ping_ms < 0 || ping_ms > 60000 )) && ping_ms=0
+        
+        # Pop the oldest hit timestamp from the queue for this GPU
+        if [[ -n "${GPU_HIT_QUEUE[$gpu_idx]:-}" ]]; then
+            local queue="${GPU_HIT_QUEUE[$gpu_idx]}"
+            local hit_ts_ms
+            read -r hit_ts_ms queue <<< "$queue"
+            GPU_HIT_QUEUE[$gpu_idx]="$queue"
+            
+            if [[ -n "$hit_ts_ms" && "$hit_ts_ms" =~ ^[0-9]+$ ]]; then
+                ping_ms=$(( accepted_ms - hit_ts_ms ))
+                (( ping_ms < 0 || ping_ms > 60000 )) && ping_ms=0
+            fi
         fi
+        
         local local_acc=0 local_rej=0
         local last_stat
         last_stat=$(tail -n 100 "$BUFFER_FILE" 2>/dev/null \
