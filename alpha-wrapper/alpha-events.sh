@@ -31,6 +31,7 @@ log_print() {
 # ===== State per GPU ==========================================================
 declare -A LAST_HITS_COUNT=()
 declare -A LAST_HITS_TS_MS=()
+declare -A LAST_VALID_PING=()
 declare -A GPU_DIFF=()
 LAST_JOB_ID=""
 LAST_POOL_HOST=""    # track reconnects
@@ -143,7 +144,11 @@ process_line() {
         if [[ -n "${LAST_HITS_TS_MS[$gpu_idx]:-}" ]]; then
             ping_ms=$(( accepted_ms - LAST_HITS_TS_MS[$gpu_idx] ))
             (( ping_ms < 0 || ping_ms > 60000 )) && ping_ms=0
+            (( ping_ms > 0 )) && LAST_VALID_PING[$gpu_idx]=$ping_ms
         fi
+        # If we didn't get a valid ping from this hit, use the last valid one
+        (( ping_ms == 0 )) && ping_ms="${LAST_VALID_PING[$gpu_idx]:-0}"
+        
         local local_acc=0 local_rej=0
         local last_stat
         last_stat=$(tail -n 100 "$BUFFER_FILE" 2>/dev/null \
