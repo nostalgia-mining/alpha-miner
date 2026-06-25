@@ -336,7 +336,7 @@ collect_ping() {
 #   Format: "%-7s%4s : %-s" padded to 45 chars
 #
 GPU_ROW_FMT="%2s %-18.18s  %12s  %-10s %-6s %-10s  %s   %-4s  %-5s %-5s"
-HDR_ROW_FMT="%2s %-18s   %-12s%-10s %-6s %-10s%s   %-4s %-5s %-5s"
+HDR_ROW_FMT="%2s %-18s   %-12s  %-10s %-6s %-10s  %s   %-4s  %-5s %-5s"
 
 render() {
     local ts; ts="[$(date +'%H:%M:%S')]"
