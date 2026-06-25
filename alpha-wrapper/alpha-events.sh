@@ -30,6 +30,7 @@ log_print() {
 
 # ===== State per GPU ==========================================================
 declare -A LAST_HITS_COUNT=()
+declare -A LAST_ACC_COUNT=()
 declare -A GPU_HIT_QUEUE=()  # Queue of hit timestamps per GPU (space-separated)
 declare -A GPU_DIFF=()
 LAST_JOB_ID=""
@@ -49,42 +50,18 @@ ts_to_ms() {
 # ===== Wait for buffer and start from current EOF ============================
 while [[ ! -f "$BUFFER_FILE" ]]; do sleep 1; done
 
-# Initialize GPU_DIFF from existing buffer content (for restarts)
-# For each GPU, find its MOST RECENT difficulty from pool events.
-# This handles per-GPU vardiff correctly even in multi-GPU rigs.
-for idx in ${GPU_LIST//,/ }; do
-    # Get the last difficulty_set or job line for this specific GPU
-    last_diff_line=$(grep -a "component=pool" "$BUFFER_FILE" 2>/dev/null \
-        | grep -E " gpu=${idx}:" \
-        | grep -E "(difficulty_set|job )" \
-        | tail -n 1)
-    
-    if [[ -n "$last_diff_line" ]]; then
-        diff=""
-        [[ "$last_diff_line" =~ [[:space:]]difficulty=([0-9.]+) ]] && diff="${BASH_REMATCH[1]}"
-        diff="${diff%.00}"
-        [[ -n "$diff" ]] && GPU_DIFF[$idx]="$diff"
-    fi
-
-    # Initialize LAST_HITS_COUNT from the most recent status line so the
-    # first status line processed doesn't spuriously queue N hit timestamps.
-    last_status=$(grep -a "component=miner status" "$BUFFER_FILE" 2>/dev/null \
-        | grep -a " gpu=${idx}:" | tail -n 1)
-    if [[ -n "$last_status" ]]; then
-        [[ "$last_status" =~ [[:space:]]hits=([0-9]+) ]] && LAST_HITS_COUNT[$idx]="${BASH_REMATCH[1]}"
-    fi
-done
+# Buffer is cleared on each miner launch by the supervisor, so no stale data.
+# Wait for first content to appear, then start processing from byte 0.
+while [[ ! -s "$BUFFER_FILE" ]]; do sleep 0.5; done
 
 # Record current size — only process lines written AFTER this point.
-# This prevents replaying old buffer content on miner restart.
-START_OFFSET=$(wc -c < "$BUFFER_FILE" 2>/dev/null || echo 0)
+START_OFFSET=0
+current_offset=0
 
 # ===== Main read loop =========================================================
 # We can't use 'tail -f' because the buffer file gets atomically replaced
 # during trimming (mv .tmp -> .buf), which causes tail -f to lose its position.
 # Instead we poll with a byte-offset tracker, reading only new content.
-
-current_offset=$(wc -c < "$BUFFER_FILE" 2>/dev/null || echo 0)
 
 process_line() {
     local line="$1"
@@ -135,18 +112,26 @@ process_line() {
         fi
 
     elif [[ "$component" == "miner" ]] && [[ "$line" =~ [[:space:]]"status"[[:space:]] ]]; then
-        local hits=0
+        local hits=0 acc=0
         [[ "$line" =~ [[:space:]]hits=([0-9]+) ]] && hits="${BASH_REMATCH[1]}"
-        local prev="${LAST_HITS_COUNT[$gpu_idx]:-0}"
-        if (( hits > prev )); then
+        [[ "$line" =~ [[:space:]]accepted=([0-9]+) ]] && acc="${BASH_REMATCH[1]}"
+        local prev_hits="${LAST_HITS_COUNT[$gpu_idx]:-0}"
+        local prev_acc="${LAST_ACC_COUNT[$gpu_idx]:-0}"
+
+        # Only queue a hit timestamp on exactly +1 increment (ignore duplicates/jumps)
+        if (( hits == prev_hits + 1 )); then
             local hit_ts_ms; hit_ts_ms="$(ts_to_ms "$ts")"
-            # Add new hit timestamp(s) to the queue
-            local new_hits=$(( hits - prev ))
-            for (( i=0; i<new_hits; i++ )); do
-                GPU_HIT_QUEUE[$gpu_idx]="${GPU_HIT_QUEUE[$gpu_idx]:-} $hit_ts_ms"
-            done
-            LAST_HITS_COUNT[$gpu_idx]="$hits"
+            GPU_HIT_QUEUE[$gpu_idx]="${GPU_HIT_QUEUE[$gpu_idx]:-} $hit_ts_ms"
         fi
+        (( hits > prev_hits )) && LAST_HITS_COUNT[$gpu_idx]="$hits"
+
+        # Track accepted count — pop queue on +1 increment (share accepted via status line)
+        # This handles the case where component=share accepted line is missing
+        if (( acc == prev_acc + 1 )); then
+            # Don't pop here — let the component=share accepted handler do it
+            :
+        fi
+        (( acc > prev_acc )) && LAST_ACC_COUNT[$gpu_idx]="$acc"
 
     elif [[ "$component" == "share" ]] && [[ "$line" =~ "accepted" ]]; then
         local job_id=""

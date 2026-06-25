@@ -171,6 +171,9 @@ while :; do
     pool="${POOLS[$idx]}"
     echo "$(_ts) [INFO] launching miner on pool[$idx]=$pool"
 
+    # Clear buffer on each miner launch so event scripts don't read stale data
+    > "$BUFFER_FILE"
+
     # Named pipe: miner output flows into the buffer writer, never to screen/log
     MINER_PIPE="$BUFFER_DIR/miner-$$.pipe"
     mkfifo "$MINER_PIPE" 2>/dev/null
