@@ -54,7 +54,7 @@ while [[ ! -f "$BUFFER_FILE" ]]; do sleep 1; done
 # may be thousands of lines back in a long-running miner session.
 while IFS= read -r line; do
     [[ "$line" =~ [[:space:]]component=pool ]] || continue
-    local gpu_raw="" gpu_idx="" diff=""
+    gpu_raw="" gpu_idx="" diff=""
     [[ "$line" =~ [[:space:]]gpu=([^[:space:]]+) ]] && gpu_raw="${BASH_REMATCH[1]}"
     gpu_idx="${gpu_raw%%:*}"
     [[ "$gpu_idx" == "system" || -z "$gpu_idx" ]] && gpu_idx="0"
