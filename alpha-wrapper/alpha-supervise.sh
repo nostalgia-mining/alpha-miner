@@ -198,14 +198,14 @@ while :; do
         # miner restart to recover. We detect these in the buffer and kill/
         # restart the miner immediately rather than waiting for the failover
         # dead-share timeout.
-        if grep -qaE 'component=miner error=' "$BUFFER_FILE" 2>/dev/null; then
-            # Only act on errors that appeared after this launch
-            launch_ts=$(date -u -d "@$launch" +%FT%TZ 2>/dev/null || date -u +%FT%TZ)
-            err_line=$(grep -aE 'component=miner error=' "$BUFFER_FILE" 2>/dev/null | tail -n1)
-            if [[ -n "$err_line" ]]; then
+        # Only act on errors whose timestamp is AFTER this launch.
+        err_line=$(grep -aE 'component=miner error=' "$BUFFER_FILE" 2>/dev/null | tail -n1)
+        if [[ -n "$err_line" ]]; then
+            err_ts="${err_line%% *}"
+            err_epoch=$(date -d "${err_ts}" +%s 2>/dev/null || echo 0)
+            if (( err_epoch >= launch )); then
                 echo "$(date -u +%FT%TZ) [wrapper] miner error detected — restarting: $err_line"
-                # Truncate the buffer to remove the error line so we don't
-                # trigger again on the same error after restart
+                # Remove error lines from buffer so we don't re-trigger after restart
                 grep -vaE 'component=miner error=' "$BUFFER_FILE" > "${BUFFER_FILE}.tmp" 2>/dev/null \
                     && mv "${BUFFER_FILE}.tmp" "$BUFFER_FILE"
                 rotate="next"; break
