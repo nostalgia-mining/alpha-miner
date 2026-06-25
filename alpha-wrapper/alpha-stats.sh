@@ -26,8 +26,8 @@ POOL_RATE="0.004295"  # TTF = diff / (hashrate_TH * POOL_RATE)
 #   → TTF = diff × 2252.8 / (524288 × hashrate_TH)
 #   → TTF = diff / hashrate_TH × (2252.8/524288) = diff / hashrate_TH × 0.004295
 
-# ===== Colors =================================================================
-G=$'\e[32m'; R=$'\e[0m'; B=$'\e[1m'
+# ===== Colors — all disabled for plain text output ============================
+G=''; R=''; B=''
 
 # ===== Layout constants =======================================================
 # TW=91 is the content width (chars after the "[HH:MM:SS] " timestamp prefix).
@@ -120,7 +120,7 @@ fmt_pool_hr() {
 
 fmt_eff() {
     awk -v h="$1" -v w="$2" 'BEGIN{
-        if (w > 0.001) printf "%.2f TH/W", (h/1e12)/w
+        if (w > 0.001) printf "%.3f TH/W", (h/1e12)/w
         else           printf "n/a"
     }'
 }
@@ -329,8 +329,8 @@ collect_ping() {
 #   7 spaces + "Pool" (4) + " : " = 14 chars before value
 #   Format: "%-7s%4s : %-s" padded to 45 chars
 #
-GPU_ROW_FMT="%2s %-18.18s  %12s %-10s %-6s  %-9s   %s   %-4s  %-5s %-5s"
-HDR_ROW_FMT="%2s %-18s  %-12s %-10s %-6s  %-10s  %s   %-4s  %-5s %-5s"
+GPU_ROW_FMT="%2s %-18.18s %12s %-11s %-6s %-10s  %s   %-4s  %-5s %-5s"
+HDR_ROW_FMT="%2s %-18s  %-11s %-11s %-6s %-10s  %s   %-4s  %-5s %-5s"
 
 render() {
     local ts; ts="[$(date +'%H:%M:%S')]"
@@ -387,7 +387,7 @@ render() {
     local total_eff; total_eff="$(fmt_eff "$TOTAL_HASH_RAW" "$TOTAL_WATTS")"
     local total_sh="${TOTAL_ACC}/${TOTAL_REJ}"
     local total_row
-    printf -v total_row "   %-18s  %12s %-10s %-6s  %-9s" \
+    printf -v total_row "   %-18s %12s %-11s %-6s %-10s" \
         "Total" "$total_hr" "$total_sh" "$TOTAL_WATTS" "$total_eff"
     tprint "${G}${ts} ${total_row}${R}"
 

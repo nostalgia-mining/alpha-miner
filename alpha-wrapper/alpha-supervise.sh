@@ -70,14 +70,32 @@ miner_pid=""
 writer_pid=""
 
 # ---- Rolling buffer writer --------------------------------------------------
-# Reads from a named pipe, appends to buffer, trims every 500 lines written.
+# Reads from a named pipe, appends to rolling buffer, trims every 500 writes.
+# Also captures the first HEAD_LINES lines to a permanent head file for debugging.
+HEAD_FILE="$BUFFER_DIR/miner-raw-head.buf"   # in RAM — symlinked to log dir if --extralogs
+HEAD_LINES=1000
+HEAD_LOG="/var/log/miner/custom/alpha-wrapper-raw-head.log"
+
 start_buffer_writer() {
     local pipe="$1"
     local cnt_file="$BUFFER_DIR/.wc"
+    local head_cnt_file="$BUFFER_DIR/.hc"
     echo 0 > "$cnt_file"
+    echo 0 > "$head_cnt_file"
+    # Clear head file for this session
+    > "$HEAD_FILE"
     (
         while IFS= read -r line; do
             printf '%s\n' "$line" >> "$BUFFER_FILE"
+
+            # Capture head (first HEAD_LINES lines only, once per session)
+            local hc
+            hc=$(cat "$head_cnt_file" 2>/dev/null || echo 0)
+            if (( hc < HEAD_LINES )); then
+                printf '%s\n' "$line" >> "$HEAD_FILE"
+                echo $(( hc + 1 )) > "$head_cnt_file"
+            fi
+
             local cnt
             cnt=$(cat "$cnt_file" 2>/dev/null || echo 0)
             cnt=$(( cnt + 1 ))

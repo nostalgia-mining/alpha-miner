@@ -15,13 +15,13 @@ BUFFER_FILE="${BUFFER_FILE:-/run/alpha-wrapper/miner-raw.buf}"
 LOG_FILE="${LOG_FILE:-/var/log/miner/custom/alpha-wrapper.log}"
 GPU_LIST="${GPU_LIST:-0}"
 
-# ===== Colors =================================================================
-G=$'\e[32m'   # green
-Y=$'\e[33m'   # yellow
-R=$'\e[0m'    # reset
-RD=$'\e[31m'  # red
-W=$'\e[97m'   # bright white
-B=$'\e[1m'    # bold
+# ===== Colors — all disabled for plain text output ============================
+G=''   # was green
+Y=''   # was yellow
+R=''   # was reset
+RD=''  # was red
+W=''   # was white
+B=''   # was bold
 
 # Helper: print to stdout only (h-run.sh tee strips ANSI and writes to log)
 log_print() {
@@ -53,137 +53,115 @@ while [[ ! -f "$BUFFER_FILE" ]]; do sleep 1; done
 # This prevents replaying old buffer content on miner restart.
 START_OFFSET=$(wc -c < "$BUFFER_FILE" 2>/dev/null || echo 0)
 
-# ===== Main tail loop =========================================================
-# tail -c +N starts reading from byte N (1-indexed), so +$(START_OFFSET+1)
-# skips everything before our start point.
-tail -c "+$(( START_OFFSET + 1 ))" -f "$BUFFER_FILE" 2>/dev/null \
-| while IFS= read -r line; do
+# ===== Main read loop =========================================================
+# We can't use 'tail -f' because the buffer file gets atomically replaced
+# during trimming (mv .tmp -> .buf), which causes tail -f to lose its position.
+# Instead we poll with a byte-offset tracker, reading only new content.
 
-    [[ -z "$line" ]] && continue
+current_offset=$(wc -c < "$BUFFER_FILE" 2>/dev/null || echo 0)
 
-    # Extract timestamp
-    ts="${line%% *}"
+process_line() {
+    local line="$1"
+    [[ -z "$line" ]] && return
 
-    # Extract gpu index: gpu=0:Name  or  gpu=system
-    gpu_raw=""
+    local ts="${line%% *}"
+    local gpu_raw="" gpu_idx="" component=""
     [[ "$line" =~ [[:space:]]gpu=([^[:space:]]+) ]] && gpu_raw="${BASH_REMATCH[1]}"
     gpu_idx="${gpu_raw%%:*}"
     [[ "$gpu_idx" == "system" || -z "$gpu_idx" ]] && gpu_idx="0"
-
-    # Extract component
-    component=""
     [[ "$line" =~ [[:space:]]component=([^[:space:]]+) ]] && component="${BASH_REMATCH[1]}"
 
-    hhmm="$(date +'%H:%M:%S')"
+    local hhmm; hhmm="$(date +'%H:%M:%S')"
 
-    # =========================================================================
-    # POOL EVENTS
-    # =========================================================================
     if [[ "$component" == "pool" ]]; then
-
-        # Connected — detect reconnect vs first connect
         if [[ "$line" =~ [[:space:]]connected[[:space:]] && "$line" =~ host= ]]; then
-            host="" ; port=""
+            local host="" port=""
             [[ "$line" =~ [[:space:]]host=([^[:space:]]+) ]] && host="${BASH_REMATCH[1]}"
             [[ "$line" =~ [[:space:]]port=([^[:space:]]+) ]] && port="${BASH_REMATCH[1]}"
-            cur_pool="${host}:${port}"
-
+            local cur_pool="${host}:${port}"
             if [[ -n "$LAST_POOL_HOST" && "$LAST_POOL_HOST" != "$cur_pool" ]]; then
-                # Switched to a different pool (failover)
-                log_print "${Y}${B}[${hhmm}] ===== POOL FAILOVER: ${LAST_POOL_HOST} -> ${cur_pool} =====${R}"
+                log_print "[${hhmm}] ===== POOL FAILOVER: ${LAST_POOL_HOST} -> ${cur_pool} ====="
             elif [[ -n "$LAST_POOL_HOST" ]]; then
-                # Reconnect to same pool
-                log_print "${Y}${B}[${hhmm}] ===== POOL RECONNECT: ${cur_pool} =====${R}"
+                log_print "[${hhmm}] ===== POOL RECONNECT: ${cur_pool} ====="
             fi
             LAST_POOL_HOST="$cur_pool"
-            log_print "${G}[${hhmm}] Pool connected          ${cur_pool}${R}"
-
-        # Disconnected
+            log_print "[${hhmm}] Pool connected          ${cur_pool}"
         elif [[ "$line" =~ "disconnected" ]]; then
-            log_print "${RD}[${hhmm}] Pool disconnected${R}"
-
-        # Difficulty set
+            log_print "[${hhmm}] Pool disconnected"
         elif [[ "$line" =~ "difficulty_set" ]]; then
-            diff=""
+            local diff=""
             [[ "$line" =~ [[:space:]]difficulty=([0-9.]+) ]] && diff="${BASH_REMATCH[1]}"
             diff="${diff%.00}"
-            log_print "${Y}[${hhmm}] Difficulty set           ${diff}${R}"
-
-        # New job (DEBUG: component=pool job ...)
+            log_print "[${hhmm}] Difficulty set           ${diff}"
         elif [[ "$line" =~ [[:space:]]"job "[[:space:]] ]] || [[ "$line" =~ [[:space:]]job[[:space:]]id= ]]; then
-            job_id="" ; gen="" ; diff=""
+            local job_id="" gen="" diff=""
             [[ "$line" =~ [[:space:]]id=([^[:space:]]+) ]]        && job_id="${BASH_REMATCH[1]}"
             [[ "$line" =~ [[:space:]]generation=([^[:space:]]+) ]] && gen="${BASH_REMATCH[1]}"
             [[ "$line" =~ [[:space:]]difficulty=([0-9.]+) ]]       && diff="${BASH_REMATCH[1]}"
             diff="${diff%.00}"
             [[ -n "$diff" ]] && GPU_DIFF[$gpu_idx]="$diff"
-
             if [[ -n "$job_id" && "$job_id" != "$LAST_JOB_ID" ]]; then
                 LAST_JOB_ID="$job_id"
-                local_short="${job_id:0:8}...${job_id: -8}"
-                log_print "${W}${B}[${hhmm}] New job               id=${local_short}  gen=${gen}  diff=${diff}${R}"
+                local short="${job_id:0:8}...${job_id: -8}"
+                log_print "[${hhmm}] New job               id=${short}  gen=${gen}  diff=${diff}"
             fi
         fi
 
-    # =========================================================================
-    # MINER STATUS — track hits increment for ping
-    # =========================================================================
     elif [[ "$component" == "miner" ]] && [[ "$line" =~ [[:space:]]"status"[[:space:]] ]]; then
-        hits=0
+        local hits=0
         [[ "$line" =~ [[:space:]]hits=([0-9]+) ]] && hits="${BASH_REMATCH[1]}"
-        prev="${LAST_HITS_COUNT[$gpu_idx]:-0}"
+        local prev="${LAST_HITS_COUNT[$gpu_idx]:-0}"
         if (( hits > prev )); then
             LAST_HITS_TS_MS[$gpu_idx]="$(ts_to_ms "$ts")"
             LAST_HITS_COUNT[$gpu_idx]="$hits"
         fi
 
-    # =========================================================================
-    # SHARE ACCEPTED
-    # =========================================================================
     elif [[ "$component" == "share" ]] && [[ "$line" =~ "accepted" ]]; then
-        job_id=""
+        local job_id=""
         [[ "$line" =~ [[:space:]]job=([^[:space:]]+) ]] && job_id="${BASH_REMATCH[1]}"
-
-        # Ping from hits-increment timestamp
-        ping_ms=0
-        accepted_ms="$(ts_to_ms "$ts")"
+        local ping_ms=0
+        local accepted_ms; accepted_ms="$(ts_to_ms "$ts")"
         if [[ -n "${LAST_HITS_TS_MS[$gpu_idx]:-}" ]]; then
             ping_ms=$(( accepted_ms - LAST_HITS_TS_MS[$gpu_idx] ))
             (( ping_ms < 0 || ping_ms > 60000 )) && ping_ms=0
         fi
-
-        # Get acc/rej from the miner's own counter (latest status line) — stays
-        # accurate across restarts because we read the miner's value, not ours.
-        local_acc=0 ; local_rej=0
+        local local_acc=0 local_rej=0
+        local last_stat
         last_stat=$(grep -a "component=miner status" "$BUFFER_FILE" 2>/dev/null \
             | grep " gpu=${gpu_idx}:" | tail -n1)
         [[ "$last_stat" =~ [[:space:]]accepted=([0-9]+) ]] && local_acc="${BASH_REMATCH[1]}"
         [[ "$last_stat" =~ [[:space:]]rejected=([0-9]+) ]] && local_rej="${BASH_REMATCH[1]}"
+        local diff="${GPU_DIFF[$gpu_idx]:-?}"
+        local short_job="${job_id:0:8}"
+        local ping_str="n/a"
+        (( ping_ms > 0 )) && ping_str="${ping_ms} ms"
+        log_print "[${hhmm}] GPU ${gpu_idx} Share accepted   ping=${ping_str}   diff=${diff}   job=${short_job}   [${local_acc}/${local_rej}]"
 
-        diff="${GPU_DIFF[$gpu_idx]:-?}"
-        short_job="${job_id:0:8}"
-
-        if (( ping_ms > 0 )); then
-            ping_str="${ping_ms} ms"
-        else
-            ping_str="n/a"
-        fi
-
-        log_print "${G}[${hhmm}] GPU ${gpu_idx} Share accepted   ping=${ping_str}   diff=${diff}   job=${short_job}   [${local_acc}/${local_rej}]${R}"
-
-    # =========================================================================
-    # SHARE REJECTED
-    # =========================================================================
     elif [[ "$component" == "share" ]] && [[ "$line" =~ "rejected" ]]; then
-        local_acc=0 ; local_rej=0
+        local local_acc=0 local_rej=0
+        local last_stat
         last_stat=$(grep -a "component=miner status" "$BUFFER_FILE" 2>/dev/null \
             | grep " gpu=${gpu_idx}:" | tail -n1)
         [[ "$last_stat" =~ [[:space:]]accepted=([0-9]+) ]] && local_acc="${BASH_REMATCH[1]}"
         [[ "$last_stat" =~ [[:space:]]rejected=([0-9]+) ]] && local_rej="${BASH_REMATCH[1]}"
-        diff="${GPU_DIFF[$gpu_idx]:-?}"
-
-        log_print "${RD}[${hhmm}] GPU ${gpu_idx} Share REJECTED              diff=${diff}              [${local_acc}/${local_rej}]${R}"
-
+        local diff="${GPU_DIFF[$gpu_idx]:-?}"
+        log_print "[${hhmm}] GPU ${gpu_idx} Share REJECTED              diff=${diff}              [${local_acc}/${local_rej}]"
     fi
+}
 
+while true; do
+    local_size=$(wc -c < "$BUFFER_FILE" 2>/dev/null || echo 0)
+    if (( local_size < current_offset )); then
+        # File was trimmed/replaced — reset to current end
+        current_offset=$local_size
+    fi
+    if (( local_size > current_offset )); then
+        # Read only the new bytes
+        dd if="$BUFFER_FILE" bs=1 skip="$current_offset" 2>/dev/null | \
+        while IFS= read -r line; do
+            process_line "$line"
+        done
+        current_offset=$local_size
+    fi
+    sleep 0.5
 done

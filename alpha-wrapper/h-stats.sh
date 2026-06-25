@@ -33,7 +33,7 @@ declare -A hash_rates
 declare -a hs_array bus_numbers temp_array fan_array
 
 # ---- GPU hardware stats from nvidia-smi -------------------------------------
-declare -A nvsmi_bus nvsmi_temp nvsmi_fan
+declare -A nvsmi_bus nvsmi_temp nvsmi_fan nvsmi_power nvsmi_cclk nvsmi_mclk
 if command -v nvidia-smi >/dev/null 2>&1; then
     while IFS=',' read -r idx bus_raw temp_raw fan_raw; do
         idx="${idx// /}"; bus_raw="${bus_raw// /}"
@@ -50,9 +50,11 @@ fi
 # ---- Parse log ---------------------------------------------------------------
 while IFS= read -r line; do
     gpu_id=""; hash_val=""
-    [[ $line =~ gpu=([0-9]+):      ]] && gpu_id="${BASH_REMATCH[1]}"
-    [[ $line =~ gpu=system         ]] && gpu_id="total"
-    [[ $line =~ $metric_re         ]] && hash_val="${BASH_REMATCH[1]}"
+    # Match per-GPU lines: gpu=0:Name  (captures the digit before colon)
+    [[ $line =~ [[:space:]]gpu=([0-9]+): ]] && gpu_id="${BASH_REMATCH[1]}"
+    # Match system total line
+    [[ $line =~ [[:space:]]gpu=system   ]] && gpu_id="total"
+    [[ $line =~ $metric_re              ]] && hash_val="${BASH_REMATCH[1]}"
 
     if [[ "$gpu_id" == "total" && -n "$hash_val" ]]; then
         khs="$hash_val"

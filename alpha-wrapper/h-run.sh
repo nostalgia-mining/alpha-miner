@@ -26,8 +26,8 @@ mkdir -p /var/run/hive 2>/dev/null
 mkdir -p "$BUFFER_DIR"  2>/dev/null
 touch "$BUFFER_FILE"    2>/dev/null
 
-# Wrapper's own startup messages go to screen and persistent log (ANSI stripped for log)
-exec > >(tee >(sed 's/\x1b\[[0-9;]*m//g' >> "$LOG")) 2>&1
+# Wrapper's own startup messages go to screen and persistent log
+exec > >(exec tee -a "$LOG") 2>&1
 
 echo "--------------------------------------------------------------------"
 echo "AlphaMiner PEARL v${CUSTOM_VERSION} -- HiveOS Wrapper"
@@ -81,11 +81,15 @@ export CUDA_DEVICE_ORDER=PCI_BUS_ID
 # Access via: tail -f /var/log/miner/custom/alpha-wrapper-raw.log
 # ============================================================================
 RAW_LOG="/var/log/miner/custom/alpha-wrapper-raw.log"
+RAW_HEAD_LOG="/var/log/miner/custom/alpha-wrapper-raw-head.log"
 if [[ "${WRAPPER_EXTRALOGS:-0}" == "1" ]]; then
-    ln -sf "$BUFFER_FILE" "$RAW_LOG" 2>/dev/null
-    echo "[$(date +'%H:%M:%S')] [INFO]  Extra logs enabled → tail -f $RAW_LOG"
+    ln -sf "$BUFFER_FILE"                        "$RAW_LOG"      2>/dev/null
+    ln -sf "$BUFFER_DIR/miner-raw-head.buf"      "$RAW_HEAD_LOG" 2>/dev/null
+    echo "[$(date +'%H:%M:%S')] [INFO]  Extra logs enabled"
+    echo "[$(date +'%H:%M:%S')] [INFO]    Buffer   : tail -f $RAW_LOG"
+    echo "[$(date +'%H:%M:%S')] [INFO]    Head     : cat $RAW_HEAD_LOG"
 else
-    rm -f "$RAW_LOG" 2>/dev/null
+    rm -f "$RAW_LOG" "$RAW_HEAD_LOG" 2>/dev/null
 fi
 
 # ============================================================================
