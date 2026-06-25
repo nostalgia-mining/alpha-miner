@@ -111,15 +111,15 @@ process_line() {
                 log_print "[${hhmm}] ===== POOL RECONNECT: ${cur_pool} ====="
             fi
             LAST_POOL_HOST="$cur_pool"
-            log_print "[${hhmm}] Pool connected          ${cur_pool}"
+            log_print "[${hhmm}] [INFO] Pool connected: ${cur_pool}"
         elif [[ "$line" =~ "disconnected" ]]; then
-            log_print "[${hhmm}] Pool disconnected"
+            log_print "[${hhmm}] [INFO] Pool disconnected"
         elif [[ "$line" =~ "difficulty_set" ]]; then
             local diff=""
             [[ "$line" =~ [[:space:]]difficulty=([0-9.]+) ]] && diff="${BASH_REMATCH[1]}"
             diff="${diff%.00}"
             [[ -n "$diff" ]] && GPU_DIFF[$gpu_idx]="$diff"
-            log_print "[${hhmm}] Difficulty set           ${diff}"
+            log_print "[${hhmm}] [INFO] Difficulty set: ${diff}"
         elif [[ "$line" =~ [[:space:]]"job "[[:space:]] ]] || [[ "$line" =~ [[:space:]]job[[:space:]]id= ]]; then
             local job_id="" gen="" diff=""
             [[ "$line" =~ [[:space:]]id=([^[:space:]]+) ]]        && job_id="${BASH_REMATCH[1]}"
@@ -130,7 +130,7 @@ process_line() {
             if [[ -n "$job_id" && "$job_id" != "$LAST_JOB_ID" ]]; then
                 LAST_JOB_ID="$job_id"
                 local short="${job_id:0:8}...${job_id: -8}"
-                log_print "[${hhmm}] New job               id=${short}  gen=${gen}  diff=${diff}"
+                log_print "[${hhmm}] GPU ${gpu_idx} New job (${short})  gen=${gen}  diff=${diff}"
             fi
         fi
 
@@ -178,7 +178,9 @@ process_line() {
         local short_job="${job_id:0:8}"
         local ping_str="n/a"
         (( ping_ms > 0 )) && ping_str="${ping_ms} ms"
-        log_print "[${hhmm}] GPU ${gpu_idx} Share accepted   ping=${ping_str}   diff=${diff}   job=${short_job}   [${local_acc}/${local_rej}]"
+        # Fixed-width ping field (10 chars) so diff/job columns align
+        printf -v ping_field "%-10s" "(${ping_str})"
+        log_print "[${hhmm}] GPU ${gpu_idx} Share accepted ${ping_field} diff=${diff}   job=${short_job}   [${local_acc}/${local_rej}]"
 
     elif [[ "$component" == "share" ]] && [[ "$line" =~ "rejected" || "$line" =~ "dropped" ]]; then
         # Pop from hit queue to keep it in sync (same as accepted, but no ping)
@@ -199,7 +201,8 @@ process_line() {
         local diff="${GPU_DIFF[$gpu_idx]:-?}"
         local label="REJECTED"
         [[ "$line" =~ "dropped" ]] && label="DROPPED"
-        log_print "[${hhmm}] GPU ${gpu_idx} Share ${label}              diff=${diff}              [${local_acc}/${local_rej}]"
+        printf -v label_field "%-10s" "${label}"
+        log_print "[${hhmm}] GPU ${gpu_idx} Share ${label_field} diff=${diff}   [${local_acc}/${local_rej}]"
     fi
 }
 

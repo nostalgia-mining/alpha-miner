@@ -29,15 +29,18 @@ touch "$BUFFER_FILE"    2>/dev/null
 # Wrapper's own startup messages go to screen and persistent log
 exec > >(exec tee -a "$LOG") 2>&1
 
+# Timestamp helper
+_ts() { echo "[$(date +'%Y-%m-%d %H:%M:%S')]"; }
+
 echo "--------------------------------------------------------------------"
-echo "AlphaMiner PEARL v${CUSTOM_VERSION} -- HiveOS Wrapper"
+echo "AlphaMiner PEARL v${CUSTOM_VERSION} -- HiveOS Wrapper by nostalgia"
 echo "--------------------------------------------------------------------"
 
 # ============================================================================
 # Read miner.conf (written by h-config.sh on each HiveOS start)
 # ============================================================================
 if [[ ! -f "$SCRIPT_PATH/miner.conf" ]]; then
-    echo "[$(date +'%Y-%m-%d %H:%M:%S')] [FATAL] miner.conf not found -- run h-config.sh first"
+    echo "$(_ts) [FATAL] miner.conf not found -- run h-config.sh first"
     exit 1
 fi
 source "$SCRIPT_PATH/miner.conf"
@@ -47,29 +50,29 @@ source "$SCRIPT_PATH/miner.conf"
 # ============================================================================
 GPU_COUNT=$(nvidia-smi -L 2>/dev/null | wc -l)
 if [[ "$GPU_COUNT" -eq 0 ]]; then
-    echo "[$(date +'%Y-%m-%d %H:%M:%S')] [FATAL] No NVIDIA GPUs detected. Aborting."
+    echo "$(_ts) [FATAL] No NVIDIA GPUs detected. Aborting."
     exit 1
 fi
 
 if [[ "${WRAPPER_GPU_LIST:-all}" == "all" ]]; then
     GPU_LIST=$(seq -s, 0 $((GPU_COUNT - 1)))
-    echo "[$(date +'%Y-%m-%d %H:%M:%S')] [INFO]  No GPU filter -- using all GPUs: $GPU_LIST"
+    echo "$(_ts) [INFO] No GPU filter -- using all GPUs: $GPU_LIST"
 else
     VALIDATED=""
     IFS=',' read -ra REQ <<< "$WRAPPER_GPU_LIST"
     for g in "${REQ[@]}"; do
         if (( g >= GPU_COUNT )); then
-            echo "[$(date +'%Y-%m-%d %H:%M:%S')] [WARN]  GPU $g out of range (max $((GPU_COUNT-1))) -- skipped"
+            echo "$(_ts) [WARN] GPU $g out of range (max $((GPU_COUNT-1))) -- skipped"
         else
             [[ -z "$VALIDATED" ]] && VALIDATED="$g" || VALIDATED="$VALIDATED,$g"
         fi
     done
     if [[ -z "$VALIDATED" ]]; then
-        echo "[$(date +'%Y-%m-%d %H:%M:%S')] [FATAL] All requested GPUs invalid. Aborting."
+        echo "$(_ts) [FATAL] All requested GPUs invalid. Aborting."
         exit 1
     fi
     GPU_LIST="$VALIDATED"
-    echo "[$(date +'%Y-%m-%d %H:%M:%S')] [INFO]  GPU selection: $GPU_LIST"
+    echo "$(_ts) [INFO] GPU selection: $GPU_LIST"
 fi
 
 echo "$GPU_LIST" > "$GPU_LIST_FILE"
@@ -85,9 +88,9 @@ RAW_HEAD_LOG="/var/log/miner/custom/alpha-wrapper-raw-head.log"
 if [[ "${WRAPPER_EXTRALOGS:-0}" == "1" ]]; then
     ln -sf "$BUFFER_FILE"                        "$RAW_LOG"      2>/dev/null
     ln -sf "$BUFFER_DIR/miner-raw-head.buf"      "$RAW_HEAD_LOG" 2>/dev/null
-    echo "[$(date +'%Y-%m-%d %H:%M:%S')] [INFO]  Extra logs enabled"
-    echo "[$(date +'%Y-%m-%d %H:%M:%S')] [INFO]    Buffer   : tail -f $RAW_LOG"
-    echo "[$(date +'%Y-%m-%d %H:%M:%S')] [INFO]    Head     : cat $RAW_HEAD_LOG"
+    echo "$(_ts) [INFO] Extra logs enabled"
+    echo "$(_ts) [INFO] Buffer: tail -f $RAW_LOG"
+    echo "$(_ts) [INFO] Head: cat $RAW_HEAD_LOG"
 else
     rm -f "$RAW_LOG" "$RAW_HEAD_LOG" 2>/dev/null
 fi
@@ -106,7 +109,7 @@ ENABLE_STATS=$(( ! ${WRAPPER_NOSTATS:-0} ))
 
 _launch() {
     local script="$1" pidfile="$2" label="$3"
-    [[ -x "$script" ]] || { echo "[$(date +'%Y-%m-%d %H:%M:%S')] [WARN]  $label not executable: $script"; return; }
+    [[ -x "$script" ]] || { echo "$(_ts) [WARN] $label not executable: $script"; return; }
     if [[ -f "$pidfile" ]] && kill -0 "$(cat "$pidfile")" 2>/dev/null; then
         return  # already running
     fi
@@ -117,14 +120,14 @@ _launch() {
     POOL_HOST="$POOL_HOST" \
         "$script" &
     echo $! > "$pidfile"
-    echo "[$(date +'%Y-%m-%d %H:%M:%S')] [INFO]  $label started (PID $!)"
+    echo "$(_ts) [INFO] $label started (PID $!)"
 }
 
 if [[ "$ENABLE_STATS" == "1" ]]; then
     _launch "$EVENTS_SCRIPT" "$EVENTS_PIDFILE" "Event printer"
     _launch "$STATS_SCRIPT"  "$STATS_PIDFILE"  "Stats table"
 else
-    echo "[$(date +'%Y-%m-%d %H:%M:%S')] [INFO]  On-screen output disabled (--nostats)"
+    echo "$(_ts) [INFO] On-screen output disabled (--nostats)"
 fi
 
 # ============================================================================
@@ -132,9 +135,9 @@ fi
 # ============================================================================
 SUP="$SCRIPT_PATH/alpha-supervise.sh"
 if [[ ! -f "$SUP" ]]; then
-    echo "[$(date +'%Y-%m-%d %H:%M:%S')] [FATAL] Supervisor not found: $SUP"
+    echo "$(_ts) [FATAL] Supervisor not found: $SUP"
     exit 1
 fi
 
-echo "[$(date +'%Y-%m-%d %H:%M:%S')] [INFO]  Starting supervisor"
+echo "$(_ts) [INFO] Starting supervisor"
 exec bash "$SUP"

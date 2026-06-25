@@ -58,13 +58,16 @@ export CUDA_DEVICE_ORDER=PCI_BUS_ID
 mkdir -p "$BUFFER_DIR" 2>/dev/null
 touch "$BUFFER_FILE"   2>/dev/null
 
-echo "========================================"
+# Timestamp helper (local time)
+_ts() { echo "[$(date +'%Y-%m-%d %H:%M:%S')]"; }
+
+echo "==========================================================="
 echo "$CUSTOM_NAME v$CUSTOM_VERSION  (failover supervisor, pid $$)"
 echo "Pools (${#POOLS[@]}): ${POOLS[*]}"
 echo "Base args: ${ALPHA_BASE_ARGS[*]}"
 echo "Failover: grace=${FAILOVER_GRACE_SEC}s dead=${FAILOVER_DEAD_SEC}s return=${FAILOVER_RETURN_SEC}s"
 echo "Buffer: $BUFFER_FILE (${BUFFER_LINES} lines cap)"
-echo "========================================"
+echo "==========================================================="
 
 miner_pid=""
 writer_pid=""
@@ -84,13 +87,13 @@ start_buffer_writer() {
     echo 0 > "$head_cnt_file"
     # Clear head file for this session — prepopulate with wrapper startup banner
     {
-        echo "========================================"
+        echo "==========================================================="
         echo "$CUSTOM_NAME v$CUSTOM_VERSION  (failover supervisor, pid $$)"
         echo "Pools (${#POOLS[@]}): ${POOLS[*]}"
         echo "Base args: ${ALPHA_BASE_ARGS[*]}"
         echo "Failover: grace=${FAILOVER_GRACE_SEC}s dead=${FAILOVER_DEAD_SEC}s return=${FAILOVER_RETURN_SEC}s"
         echo "Buffer: $BUFFER_FILE (${BUFFER_LINES} lines cap)"
-        echo "========================================"
+        echo "==========================================================="
     } > "$HEAD_FILE"
     local hc=7  # 7 lines written above
     echo "$hc" > "$head_cnt_file"
@@ -137,7 +140,7 @@ stop_miner() {
 
 on_stop() {
     trap - INT TERM
-    echo "$(date -u +%FT%TZ) [wrapper] stop signal — shutting down miner"
+    echo "$(_ts) [INFO] stop signal — shutting down miner"
     stop_miner
     exit 0
 }
@@ -166,7 +169,7 @@ primary_retry_at=$(( $(now) + FAILOVER_RETURN_SEC ))
 
 while :; do
     pool="${POOLS[$idx]}"
-    echo "$(date -u +%FT%TZ) [wrapper] launching miner on pool[$idx]=$pool"
+    echo "$(_ts) [INFO] launching miner on pool[$idx]=$pool"
 
     # Named pipe: miner output flows into the buffer writer, never to screen/log
     MINER_PIPE="$BUFFER_DIR/miner-$$.pipe"
@@ -189,7 +192,7 @@ while :; do
 
         if ! kill -0 "$miner_pid" 2>/dev/null; then
             wait "$miner_pid" 2>/dev/null
-            echo "$(date -u +%FT%TZ) [wrapper] miner exited on pool[$idx] — rotating"
+            echo "$(_ts) [INFO] miner exited on pool[$idx] — rotating"
             rotate="next"; break
         fi
 
@@ -198,16 +201,14 @@ while :; do
         # miner restart to recover. We detect these in the buffer and kill/
         # restart the miner immediately rather than waiting for the failover
         # dead-share timeout.
-        if grep -qaE 'component=miner error=' "$BUFFER_FILE" 2>/dev/null; then
-            # Only act on errors that appeared after this launch
-            local launch_ts
-            launch_ts=$(date -u -d "@$launch" +%FT%TZ 2>/dev/null || date -u +%FT%TZ)
-            local err_line
-            err_line=$(grep -aE 'component=miner error=' "$BUFFER_FILE" 2>/dev/null | tail -n1)
-            if [[ -n "$err_line" ]]; then
-                echo "$(date -u +%FT%TZ) [wrapper] miner error detected — restarting: $err_line"
-                # Truncate the buffer to remove the error line so we don't
-                # trigger again on the same error after restart
+        # Only act on errors whose timestamp is AFTER this launch.
+        err_line=$(grep -aE 'component=miner error=' "$BUFFER_FILE" 2>/dev/null | tail -n1)
+        if [[ -n "$err_line" ]]; then
+            err_ts="${err_line%% *}"
+            err_epoch=$(date -d "${err_ts}" +%s 2>/dev/null || echo 0)
+            if (( err_epoch >= launch )); then
+                echo "$(_ts) [INFO] miner error detected — restarting: $err_line"
+                # Remove error lines from buffer so we don't re-trigger after restart
                 grep -vaE 'component=miner error=' "$BUFFER_FILE" > "${BUFFER_FILE}.tmp" 2>/dev/null \
                     && mv "${BUFFER_FILE}.tmp" "$BUFFER_FILE"
                 rotate="next"; break
@@ -219,12 +220,12 @@ while :; do
         (( ls < launch )) && ls=$launch
 
         if (( t - launch > FAILOVER_GRACE_SEC )) && (( t - ls > FAILOVER_DEAD_SEC )); then
-            echo "$(date -u +%FT%TZ) [wrapper] pool[$idx]=$pool DEAD — no share for $((t-ls))s — failing over"
+            echo "$(_ts) [INFO] pool[$idx]=$pool DEAD — no share for $((t-ls))s — failing over"
             rotate="next"; break
         fi
 
         if (( idx != 0 )) && (( t >= primary_retry_at )); then
-            echo "$(date -u +%FT%TZ) [wrapper] retrying primary pool[0]"
+            echo "$(_ts) [INFO] retrying primary pool[0]"
             rotate="primary"; break
         fi
     done
