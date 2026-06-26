@@ -72,6 +72,9 @@ process_line() {
     local line="$1"
     [[ -z "$line" ]] && return
 
+    # Guard: skip partial lines (from mid-write reads). Valid lines start with ISO timestamp.
+    [[ "$line" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T ]] || return
+
     local ts="${line%% *}"
     local gpu_raw="" gpu_idx="" component=""
     [[ "$line" =~ [[:space:]]gpu=([^[:space:]]+) ]] && gpu_raw="${BASH_REMATCH[1]}"
@@ -177,6 +180,7 @@ process_line() {
         fi
         if (( actual_len != expected_inflight )); then
             GPU_HIT_QUEUE[$gpu_idx]=""
+            log_print "[$(date +'%Y-%m-%d %H:%M:%S')] [DEBUG] Queue reset: gpu=$gpu_idx hits=$hits acc=$acc dropped=$dropped expected=$expected_inflight actual=$actual_len"
         fi
 
     elif [[ "$component" == "share" ]] && [[ "$line" =~ "accepted" ]]; then
@@ -247,5 +251,5 @@ while true; do
         done < <(tail -c +$((current_offset + 1)) "$EVENTS_FILE" 2>/dev/null)
         current_offset=$local_size
     fi
-    sleep 0.5
+    sleep 0.2
 done
