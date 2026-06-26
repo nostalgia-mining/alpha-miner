@@ -87,7 +87,16 @@ process_line() {
 
     if [[ "$component" == "pool" ]]; then
         local hhmm; hhmm="$(date +'%Y-%m-%d %H:%M:%S')"
-        if [[ "$line" =~ [[:space:]]connected[[:space:]] && "$line" =~ host= ]]; then
+        if [[ "$line" =~ "drop_ambiguous_share" || "$line" =~ "action=reconnect_drop" ]]; then
+            # Pool silently dropped a share during reconnect — pop from hit queue
+            if [[ -n "${GPU_HIT_QUEUE[$gpu_idx]:-}" ]]; then
+                local queue="${GPU_HIT_QUEUE[$gpu_idx]}"
+                local _discard
+                read -r _discard queue <<< "$queue"
+                GPU_HIT_QUEUE[$gpu_idx]="$queue"
+            fi
+            log_print "[${hhmm}] [WARN] Share dropped (pool reconnect)"
+        elif [[ "$line" =~ [[:space:]]connected[[:space:]] && "$line" =~ host= ]]; then
             local host="" port=""
             [[ "$line" =~ [[:space:]]host=([^[:space:]]+) ]] && host="${BASH_REMATCH[1]}"
             [[ "$line" =~ [[:space:]]port=([^[:space:]]+) ]] && port="${BASH_REMATCH[1]}"
