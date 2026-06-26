@@ -134,7 +134,7 @@ fmt_eff() {
 fmt_ttf() {
     awk -v s="$1" 'BEGIN{
         if (s <= 0)    { printf "n/a"; exit }
-        if (s < 60)    { printf "%.0f sec", s; exit }
+        if (s < 60)    { printf "%.1f sec", s; exit }
         if (s < 3600)  { printf "%.1f min", s/60; exit }
         printf "%.1f hr", s/3600
     }'
@@ -187,6 +187,8 @@ GPU_WATTS=() GPU_TEMP=() GPU_FAN=() GPU_CCLK=() GPU_MCLK=()
 GPU_ACC=() GPU_REJ=() GPU_DIFFS=()
 TOTAL_HASH_RAW=0 TOTAL_EQUIV_RAW=0 TOTAL_WATTS=0 TOTAL_ACC=0 TOTAL_REJ=0
 CURRENT_POOL="${POOL_HOST#stratum+tcp://}"
+CURRENT_JOB=""
+CURRENT_JOB_GEN=""
 
 collect_gpu_metrics() {
     GPU_NAMES=(); GPU_HASH_RAW=(); GPU_EQUIV_RAW=()
@@ -205,6 +207,14 @@ collect_gpu_metrics() {
         [[ "$conn_line" =~ [[:space:]]host=([^[:space:]]+) ]] && _h="${BASH_REMATCH[1]}"
         [[ "$conn_line" =~ [[:space:]]port=([^[:space:]]+) ]] && _p="${BASH_REMATCH[1]}"
         [[ -n "$_h" ]] && CURRENT_POOL="${_h}:${_p}"
+    fi
+
+    # Detect current job ID and generation from latest job line
+    local job_line
+    job_line=$(printf '%s\n' "$_BUF_CACHE" | grep -a "component=pool" | grep -a " job " | tail -n1)
+    if [[ -n "$job_line" ]]; then
+        [[ "$job_line" =~ [[:space:]]id=([^[:space:]]+) ]] && CURRENT_JOB="${BASH_REMATCH[1]%%:*}"
+        [[ "$job_line" =~ [[:space:]]generation=([^[:space:]]+) ]] && CURRENT_JOB_GEN="${BASH_REMATCH[1]}"
     fi
 
     for pos in "${!GPU_IDX_LIST[@]}"; do
@@ -361,9 +371,9 @@ render() {
     printf -v _h1 "%s%*s%s" "$h1_left" "$h1_gap" '' "$h1_right"
     tprint "${G}${ts} ${_h1}${R}"
 
-    # ---- Header row 2: left "PEARL / AlphaPool", right "Address: ..." -------
+    # ---- Header row 2: left "PEARL / AlphaPool", right "Wallet: ..." -------
     local h2_left="PEARL / AlphaPool"
-    local h2_right="Address: ${wallet_s}"
+    local h2_right="Wallet: ${wallet_s}"
     local h2_gap=$(( TW - ${#h2_left} - ${#h2_right} ))
     (( h2_gap < 1 )) && h2_gap=1
     printf -v _h2 "%s%*s%s" "$h2_left" "$h2_gap" '' "$h2_right"
@@ -406,11 +416,10 @@ render() {
     tprint "${G}${ts} ${BAR_DASH}${R}"
 
     # ---- Footer --------------------------------------------------------------
-    # Pipe at pos 45. Left pane = 45 chars. Right pane = 45 chars.
+    # Pipe at pos 45. Left pane = 45 chars. Right pane = 45 chars (pipe excluded).
     local LPANE=45 RPANE=45
 
-    # Section titles: "Share Metrics" (13 chars) centered in 45 → pad 16 each side
-    # "Pool Info" (9 chars) centered in 45 → pad 18 each side
+    # Section titles (no pipe between them)
     local ltitle="Share Metrics" rtitle="Pool Info"
     local lpad=$(( (LPANE - ${#ltitle}) / 2 ))
     local lrpad=$(( LPANE - ${#ltitle} - lpad ))
@@ -418,55 +427,55 @@ render() {
     local rrpad=$(( RPANE - ${#rtitle} - rpad ))
     printf -v _ltitle '%*s%s%*s' "$lpad"  '' "$ltitle" "$lrpad"  ''
     printf -v _rtitle '%*s%s%*s' "$rpad"  '' "$rtitle" "$rrpad"  ''
-    tprint "${G}${ts} ${_ltitle}|${_rtitle}${R}"
+    tprint "${G}${ts} ${_ltitle} ${_rtitle}${R}"
     tprint "${G}${ts} ${BAR_EQ}${R}"
 
-    # Footer content rows.
-    # Left pane (45 chars):
-    #   8 leading spaces + label right-aligned in 12 + " : " + value left-padded to fill rest
-    #   8 + 12 + 3 = 23 chars before value → value has 45-23=22 chars
-    #   Format: printf "%-8s%12s : %-22s"  → 8+12+3+22=45 ✓
-    # Right pane (45 chars):
-    #   7 leading spaces + label right-aligned in 4 + " : " + value left-padded to fill rest
-    #   7 + 4 + 3 = 14 chars before value → value has 45-14=31 chars
-    #   Format: printf "%-7s%4s : %-31s"  → 7+4+3+31=45 ✓
-
-    # Compute TTF
+    # Compute TTF (with one decimal)
     local diff_0="${GPU_DIFFS[0]:-524288}"
     [[ "$diff_0" == "?" ]] && diff_0=524288
     local ttf_str="n/a" ttf_secs=0
     if (( TOTAL_HASH_RAW > 0 )); then
         ttf_secs=$(awk -v d="$diff_0" -v rate="$POOL_RATE_DIVISOR" -v h="$TOTAL_HASH_RAW" \
-            'BEGIN{printf "%.0f", d / ((h/1e12) * rate)}')
+            'BEGIN{printf "%.1f", d / ((h/1e12) * rate)}')
         ttf_str="$(fmt_ttf "$ttf_secs")"
     fi
 
-    # Last found + alert if > 2x or 3x TTF
-    local last_str; last_str="$(fmt_ago "$LAST_SHARE_AGO")"
-    if (( ttf_secs > 0 && LAST_SHARE_AGO > 0 )); then
-        (( LAST_SHARE_AGO >= ttf_secs * 3 )) && last_str="${last_str} !!!"
-        (( LAST_SHARE_AGO >= ttf_secs * 2 && LAST_SHARE_AGO < ttf_secs * 3 )) && last_str="${last_str} !"
+    # Avg between shares = uptime / total_accepted + alert thresholds
+    local avg_str="n/a"
+    local uptime_now=$(( $(date +%s) - START_EPOCH ))
+    if (( TOTAL_ACC > 0 )); then
+        local avg_secs=$(awk -v u="$uptime_now" -v n="$TOTAL_ACC" 'BEGIN{printf "%.1f", u/n}')
+        avg_str="$(fmt_ttf "$avg_secs")"
+        # Alert: > TTF*1.5 → (!), > TTF*2 → (!!)
+        if (( ttf_secs > 0 )); then
+            local avg_int=${avg_secs%.*}
+            local thresh_warn=$(( ttf_secs * 3 / 2 ))   # 1.5x
+            local thresh_crit=$(( ttf_secs * 2 ))        # 2x
+            (( avg_int >= thresh_crit )) && avg_str="${avg_str}  (!!)"
+            (( avg_int >= thresh_warn && avg_int < thresh_crit )) && avg_str="${avg_str}  (!)"
+        fi
     fi
 
     local pool_hr;   pool_hr="$(fmt_pool_hr "$TOTAL_EQUIV_RAW")"
     local ping_str="n/a"
     (( LAST_PING_MS > 0 )) && ping_str="${LAST_PING_MS} ms"
     local pool_disp="$CURRENT_POOL"
+    local job_disp="n/a"
+    [[ -n "$CURRENT_JOB" ]] && job_disp="${CURRENT_JOB:0:8} [${CURRENT_JOB_GEN:-?}]"
 
     _frow() {
         local ll="$1" lv="$2" rl="$3" rv="$4"
         local lc rc
-        # Left pane (45 chars): 8 leading spaces + label right-aligned in 13 + " : " + value in 21
-        # 8 + 13 + 3 + 21 = 45 ✓
-        # "Pool hashrate" = 13 chars → exactly fills label field
-        printf -v lc '%8s%13s : %-21s' '' "$ll" "$lv"
-        printf -v rc '%7s%4s : %-31s'  '' "$rl" "$rv"
+        # Left pane (45 chars): label right-aligned in 21 + " : " + value
+        printf -v lc '%21s : %-21s' "$ll" "$lv"
+        # Right pane (45 chars): label right-aligned in 14 + " : " + value
+        printf -v rc '%14s : %-28s' "$rl" "$rv"
         tprint "${G}${ts} ${lc}|${rc}${R}"
     }
 
-    _frow "Time to find" "$ttf_str"   "Pool" "$pool_disp"
-    _frow "Last found"   "$last_str"  "Ping" "$ping_str"
-    _frow "Pool hashrate" "$pool_hr"   "Algo" "pearlhash"
+    _frow "Time to find" "$ttf_str"   "Stratum" "$pool_disp"
+    _frow "Avg. between shares" "$avg_str"  "Ping" "$ping_str"
+    _frow "Pool hashrate" "$pool_hr"   "Job" "$job_disp"
 
     tprint "${G}${ts} ${BAR_DASH}${R}"
 }
