@@ -160,11 +160,22 @@ process_line() {
         fi
 
         # Track accepted count
-        if (( acc == prev_acc + 1 )); then
-            # Don't pop here — let the component=share accepted handler do it
-            :
-        fi
         (( acc > prev_acc )) && LAST_ACC_COUNT[$gpu_idx]="$acc"
+
+        # ---- Queue sanity check (failsafe) ----
+        # The miner's counters are ground truth: in-flight = hits - accepted - dropped
+        # If our queue length doesn't match, reset to prevent permanent desync.
+        local expected_inflight=$(( hits - acc - dropped ))
+        (( expected_inflight < 0 )) && expected_inflight=0
+        local queue_str="${GPU_HIT_QUEUE[$gpu_idx]:-}"
+        local actual_len=0
+        if [[ -n "$queue_str" ]]; then
+            local _arr=($queue_str)
+            actual_len=${#_arr[@]}
+        fi
+        if (( actual_len != expected_inflight )); then
+            GPU_HIT_QUEUE[$gpu_idx]=""
+        fi
 
     elif [[ "$component" == "share" ]] && [[ "$line" =~ "accepted" ]]; then
         local hhmm; hhmm="$(date +'%Y-%m-%d %H:%M:%S')"
