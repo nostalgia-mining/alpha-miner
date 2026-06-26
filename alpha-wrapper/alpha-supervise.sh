@@ -97,6 +97,11 @@ start_buffer_writer() {
     } > "$HEAD_FILE"
     local hc=7  # 7 lines written above
     echo "$hc" > "$head_cnt_file"
+
+    # Extralogs: persistent raw log with 200 MB rotation
+    local raw_log="/var/log/miner/custom/alpha-wrapper-raw.log"
+    local raw_log_max=209715200  # 200 MB in bytes
+    local extralogs="${WRAPPER_EXTRALOGS:-0}"
     
     (
         while IFS= read -r line; do
@@ -109,12 +114,28 @@ start_buffer_writer() {
                 echo $(( hc + 1 )) > "$head_cnt_file"
             fi
 
+            # Persistent raw log (if --extralogs enabled)
+            if [[ "$extralogs" == "1" ]]; then
+                printf '%s\n' "$line" >> "$raw_log"
+            fi
+
             local cnt
             cnt=$(cat "$cnt_file" 2>/dev/null || echo 0)
             cnt=$(( cnt + 1 ))
             if (( cnt >= 500 )); then
                 tail -n "$BUFFER_LINES" "$BUFFER_FILE" > "${BUFFER_FILE}.tmp" \
                     && mv "${BUFFER_FILE}.tmp" "$BUFFER_FILE"
+
+                # Rotate raw log if over 200 MB
+                if [[ "$extralogs" == "1" ]]; then
+                    local raw_size
+                    raw_size=$(stat -c%s "$raw_log" 2>/dev/null || echo 0)
+                    if (( raw_size > raw_log_max )); then
+                        mv -f "$raw_log" "${raw_log}.1" 2>/dev/null
+                        > "$raw_log"
+                    fi
+                fi
+
                 cnt=0
             fi
             echo "$cnt" > "$cnt_file"

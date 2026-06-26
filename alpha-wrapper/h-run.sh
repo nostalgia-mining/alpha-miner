@@ -81,20 +81,22 @@ echo "$GPU_LIST" > "$GPU_LIST_FILE"
 export CUDA_DEVICE_ORDER=PCI_BUS_ID
 
 # ============================================================================
-# --extralogs: symlink the RAM buffer to an accessible log path so you can
-# tail it from HiveOS or a shell for debugging.
+# --extralogs: write all raw miner output to a persistent log file on disk.
+# Rotates at ~200 MB: current .log + previous .log.1 (max ~400 MB on disk).
 # Access via: tail -f /var/log/miner/custom/alpha-wrapper-raw.log
 # ============================================================================
 RAW_LOG="/var/log/miner/custom/alpha-wrapper-raw.log"
 RAW_HEAD_LOG="/var/log/miner/custom/alpha-wrapper-raw-head.log"
 if [[ "${WRAPPER_EXTRALOGS:-0}" == "1" ]]; then
-    ln -sf "$BUFFER_FILE"                        "$RAW_LOG"      2>/dev/null
-    ln -sf "$BUFFER_DIR/miner-raw-head.buf"      "$RAW_HEAD_LOG" 2>/dev/null
+    # Rotate previous log and start fresh
+    [[ -f "$RAW_LOG" ]] && mv -f "$RAW_LOG" "${RAW_LOG}.1" 2>/dev/null
+    > "$RAW_LOG"
+    ln -sf "$BUFFER_DIR/miner-raw-head.buf" "$RAW_HEAD_LOG" 2>/dev/null
     echo "$(_ts) [INFO] Extra logs enabled"
-    echo "$(_ts) [INFO] Buffer: tail -f $RAW_LOG"
+    echo "$(_ts) [INFO] Raw log: tail -f $RAW_LOG"
     echo "$(_ts) [INFO] Head: cat $RAW_HEAD_LOG"
 else
-    rm -f "$RAW_LOG" "$RAW_HEAD_LOG" 2>/dev/null
+    rm -f "$RAW_LOG" "${RAW_LOG}.1" "$RAW_HEAD_LOG" 2>/dev/null
 fi
 
 # ============================================================================
