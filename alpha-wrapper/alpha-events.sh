@@ -37,6 +37,7 @@ declare -A GPU_HIT_QUEUE=()  # Queue of hit timestamps per GPU (space-separated)
 declare -A GPU_DIFF=()
 LAST_JOB_ID=""
 LAST_POOL_HOST=""    # track reconnects
+LAST_SHARE_TS=""     # timestamp of last processed share event (dedup on re-read)
 SESSION_START=$(date +%s)
 
 # ===== Timestamp -> milliseconds ==============================================
@@ -136,6 +137,10 @@ process_line() {
         (( acc > prev_acc )) && LAST_ACC_COUNT[$gpu_idx]="$acc"
 
     elif [[ "$component" == "share" ]] && [[ "$line" =~ "accepted" ]]; then
+        # Dedup: skip if we already processed this exact event (after buffer re-read)
+        [[ "$ts" == "${LAST_SHARE_TS:-}" && "$line" == "${LAST_SHARE_LINE:-}" ]] && return
+        LAST_SHARE_TS="$ts"; LAST_SHARE_LINE="$line"
+
         local job_id=""
         [[ "$line" =~ [[:space:]]job=([^[:space:]]+) ]] && job_id="${BASH_REMATCH[1]}"
         local ping_ms=0
@@ -167,6 +172,10 @@ process_line() {
         log_print "[${hhmm}] GPU ${gpu_idx} Share accepted ${ping_field} diff=${diff}   job=${short_job}   [${local_acc}/${local_rej}]"
 
     elif [[ "$component" == "share" ]] && [[ "$line" =~ "rejected" || "$line" =~ "dropped" ]]; then
+        # Dedup: skip if we already processed this exact event (after buffer re-read)
+        [[ "$ts" == "${LAST_SHARE_TS:-}" && "$line" == "${LAST_SHARE_LINE:-}" ]] && return
+        LAST_SHARE_TS="$ts"; LAST_SHARE_LINE="$line"
+
         # Pop from hit queue to keep it in sync (same as accepted, but no ping)
         if [[ -n "${GPU_HIT_QUEUE[$gpu_idx]:-}" ]]; then
             local queue="${GPU_HIT_QUEUE[$gpu_idx]}"
@@ -190,8 +199,10 @@ process_line() {
 while true; do
     local_size=$(wc -c < "$BUFFER_FILE" 2>/dev/null || echo 0)
     if (( local_size < current_offset )); then
-        # File was trimmed/replaced — reset to current end
-        current_offset=$local_size
+        # File was trimmed/replaced — re-read from start to avoid missing lines.
+        # Duplicate processing is safe: hits == prev+1 check prevents double-push,
+        # and share accepted events are unique so DISPLAY_ACC won't double-count.
+        current_offset=0
     fi
     if (( local_size > current_offset )); then
         # Read only the new bytes — use process substitution (not pipe) to
