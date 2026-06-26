@@ -31,6 +31,8 @@ log_print() {
 # ===== State per GPU ==========================================================
 declare -A LAST_HITS_COUNT=()
 declare -A LAST_ACC_COUNT=()
+declare -A DISPLAY_ACC=()   # Our own accepted counter (incremented on share accepted event)
+declare -A DISPLAY_REJ=()   # Our own rejected counter (incremented on share rejected/dropped event)
 declare -A GPU_HIT_QUEUE=()  # Queue of hit timestamps per GPU (space-separated)
 declare -A GPU_DIFF=()
 LAST_JOB_ID=""
@@ -152,13 +154,10 @@ process_line() {
             fi
         fi
         
-        local local_acc=0 local_rej=0
-        local last_stat
-        last_stat=$(tail -n 100 "$BUFFER_FILE" 2>/dev/null \
-            | grep -a "component=miner status" \
-            | grep " gpu=${gpu_idx}:" | tail -n1)
-        [[ "$last_stat" =~ [[:space:]]accepted=([0-9]+) ]] && local_acc="${BASH_REMATCH[1]}"
-        [[ "$last_stat" =~ [[:space:]]rejected=([0-9]+) ]] && local_rej="${BASH_REMATCH[1]}"
+        local local_acc local_rej
+        DISPLAY_ACC[$gpu_idx]=$(( ${DISPLAY_ACC[$gpu_idx]:-0} + 1 ))
+        local_acc="${DISPLAY_ACC[$gpu_idx]}"
+        local_rej="${DISPLAY_REJ[$gpu_idx]:-0}"
         local diff="${GPU_DIFF[$gpu_idx]:-?}"
         local short_job="${job_id:0:8}"
         local ping_str="n/a"
@@ -176,13 +175,10 @@ process_line() {
             GPU_HIT_QUEUE[$gpu_idx]="$queue"
         fi
 
-        local local_acc=0 local_rej=0
-        local last_stat
-        last_stat=$(tail -n 100 "$BUFFER_FILE" 2>/dev/null \
-            | grep -a "component=miner status" \
-            | grep " gpu=${gpu_idx}:" | tail -n1)
-        [[ "$last_stat" =~ [[:space:]]accepted=([0-9]+) ]] && local_acc="${BASH_REMATCH[1]}"
-        [[ "$last_stat" =~ [[:space:]]rejected=([0-9]+) ]] && local_rej="${BASH_REMATCH[1]}"
+        local local_acc local_rej
+        DISPLAY_REJ[$gpu_idx]=$(( ${DISPLAY_REJ[$gpu_idx]:-0} + 1 ))
+        local_acc="${DISPLAY_ACC[$gpu_idx]:-0}"
+        local_rej="${DISPLAY_REJ[$gpu_idx]}"
         local diff="${GPU_DIFF[$gpu_idx]:-?}"
         local label="REJECTED"
         [[ "$line" =~ "dropped" ]] && label="DROPPED"
