@@ -81,10 +81,6 @@ HEAD_LOG="/var/log/miner/custom/alpha-wrapper-raw-head.log"
 
 start_buffer_writer() {
     local pipe="$1"
-    local cnt_file="$BUFFER_DIR/.wc"
-    local head_cnt_file="$BUFFER_DIR/.hc"
-    echo 0 > "$cnt_file"
-    echo 0 > "$head_cnt_file"
     # Clear head file for this session — prepopulate with wrapper startup banner
     {
         echo "==========================================================="
@@ -95,8 +91,6 @@ start_buffer_writer() {
         echo "Buffer: $BUFFER_FILE (${BUFFER_LINES} lines cap)"
         echo "==========================================================="
     } > "$HEAD_FILE"
-    local hc=7  # 7 lines written above
-    echo "$hc" > "$head_cnt_file"
 
     # Extralogs: persistent raw log with 200 MB rotation
     local raw_log="/var/log/miner/custom/alpha-wrapper-raw.log"
@@ -104,14 +98,16 @@ start_buffer_writer() {
     local extralogs="${WRAPPER_EXTRALOGS:-0}"
     
     (
+        local cnt=0
+        local hc=7  # 7 lines already in head file from banner above
+
         while IFS= read -r line; do
             printf '%s\n' "$line" >> "$BUFFER_FILE"
 
             # Capture head (first HEAD_LINES lines only, once per session)
-            hc=$(cat "$head_cnt_file" 2>/dev/null || echo 0)
             if (( hc < HEAD_LINES )); then
                 printf '%s\n' "$line" >> "$HEAD_FILE"
-                echo $(( hc + 1 )) > "$head_cnt_file"
+                (( hc++ ))
             fi
 
             # Persistent raw log (if --extralogs enabled)
@@ -119,9 +115,7 @@ start_buffer_writer() {
                 printf '%s\n' "$line" >> "$raw_log"
             fi
 
-            local cnt
-            cnt=$(cat "$cnt_file" 2>/dev/null || echo 0)
-            cnt=$(( cnt + 1 ))
+            (( cnt++ ))
             if (( cnt >= 500 )); then
                 tail -n "$BUFFER_LINES" "$BUFFER_FILE" > "${BUFFER_FILE}.tmp" \
                     && mv "${BUFFER_FILE}.tmp" "$BUFFER_FILE"
@@ -138,7 +132,6 @@ start_buffer_writer() {
 
                 cnt=0
             fi
-            echo "$cnt" > "$cnt_file"
         done < "$pipe"
     ) &
     writer_pid=$!

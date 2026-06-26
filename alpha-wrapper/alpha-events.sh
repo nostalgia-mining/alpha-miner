@@ -76,9 +76,14 @@ process_line() {
     [[ "$gpu_idx" == "system" || -z "$gpu_idx" ]] && gpu_idx="0"
     [[ "$line" =~ [[:space:]]component=([^[:space:]]+) ]] && component="${BASH_REMATCH[1]}"
 
-    local hhmm; hhmm="$(date +'%Y-%m-%d %H:%M:%S')"
+    # Skip lines that don't match any handler (vast majority are status lines
+    # that only need hit tracking — no date call needed for those)
+    if [[ "$component" != "pool" && "$component" != "share" && "$component" != "miner" ]]; then
+        return
+    fi
 
     if [[ "$component" == "pool" ]]; then
+        local hhmm; hhmm="$(date +'%Y-%m-%d %H:%M:%S')"
         if [[ "$line" =~ [[:space:]]connected[[:space:]] && "$line" =~ host= ]]; then
             local host="" port=""
             [[ "$line" =~ [[:space:]]host=([^[:space:]]+) ]] && host="${BASH_REMATCH[1]}"
@@ -136,6 +141,7 @@ process_line() {
         (( acc > prev_acc )) && LAST_ACC_COUNT[$gpu_idx]="$acc"
 
     elif [[ "$component" == "share" ]] && [[ "$line" =~ "accepted" ]]; then
+        local hhmm; hhmm="$(date +'%Y-%m-%d %H:%M:%S')"
         local job_id=""
         [[ "$line" =~ [[:space:]]job=([^[:space:]]+) ]] && job_id="${BASH_REMATCH[1]}"
         local ping_ms=0
@@ -167,6 +173,7 @@ process_line() {
         log_print "[${hhmm}] GPU ${gpu_idx} Share accepted ${ping_field} diff=${diff}   job=${short_job}   [${local_acc}/${local_rej}]"
 
     elif [[ "$component" == "share" ]] && [[ "$line" =~ "rejected" || "$line" =~ "dropped" ]]; then
+        local hhmm; hhmm="$(date +'%Y-%m-%d %H:%M:%S')"
         # Pop from hit queue to keep it in sync (same as accepted, but no ping)
         if [[ -n "${GPU_HIT_QUEUE[$gpu_idx]:-}" ]]; then
             local queue="${GPU_HIT_QUEUE[$gpu_idx]}"
