@@ -85,6 +85,11 @@ EVENTS_PIPE="$BUFFER_DIR/events.pipe"
 rm -f "$EVENTS_PIPE" 2>/dev/null
 mkfifo "$EVENTS_PIPE" 2>/dev/null
 
+# Open a background dummy reader so the writer's open(O_WRONLY) never blocks.
+# The events script will also read from the FIFO — data goes to it.
+sleep infinity < "$EVENTS_PIPE" &
+DUMMY_READER_PID=$!
+
 start_buffer_writer() {
     local pipe="$1"
     local cnt_file="$BUFFER_DIR/.wc"
@@ -113,10 +118,9 @@ start_buffer_writer() {
         # Ignore SIGPIPE so writing to a broken events pipe doesn't kill us
         trap '' PIPE
 
-        # Open events FIFO as a persistent file descriptor (fd 3).
-        # Using read-write mode (<>) so the open never blocks, even if
-        # no reader is connected yet. Writes silently fail if no reader.
-        exec 3<>"$EVENTS_PIPE" 2>/dev/null
+        # Open events FIFO as a persistent write-only file descriptor (fd 3).
+        # The dummy reader (sleep infinity) ensures this open never blocks.
+        exec 3>"$EVENTS_PIPE" 2>/dev/null
 
         while IFS= read -r line; do
             printf '%s\n' "$line" >> "$BUFFER_FILE"
@@ -180,6 +184,7 @@ on_stop() {
     trap - INT TERM
     echo "$(_ts) [INFO] stop signal — shutting down miner"
     stop_miner
+    [[ -n "${DUMMY_READER_PID:-}" ]] && kill "$DUMMY_READER_PID" 2>/dev/null
     exit 0
 }
 trap on_stop INT TERM
