@@ -209,7 +209,7 @@ process_line() {
         local ping_str="n/a"
         (( ping_ms > 0 )) && ping_str="${ping_ms} ms"
         local _line
-        printf -v _line "[%s] GPU %-2s Share accepted %-11s diff=%-8s job=%-10s [%s/%s]" \
+        printf -v _line "[%s] GPU %-2s Share accepted %-10s diff=%-8s job=%-10s [%s/%s]" \
             "$hhmm" "$gpu_idx" "(${ping_str})" "$diff" "$short_job" "$local_acc" "$local_rej"
         log_print "$_line"
 
