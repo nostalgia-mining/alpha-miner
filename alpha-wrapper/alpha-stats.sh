@@ -466,10 +466,10 @@ render() {
     _frow() {
         local ll="$1" lv="$2" rl="$3" rv="$4"
         local lc rc
-        # Left pane (45 chars): label right-aligned in 21 + " : " + value
+        # Left pane (45 chars): 21 label + " : " + 21 value = 45
         printf -v lc '%21s : %-21s' "$ll" "$lv"
-        # Right pane (45 chars): label right-aligned in 14 + " : " + value
-        printf -v rc '%14s : %-28s' "$rl" "$rv"
+        # Right pane (45 chars): 13 label + " : " + 29 value = 45
+        printf -v rc '%13s : %-29s' "$rl" "$rv"
         tprint "${G}${ts} ${lc}|${rc}${R}"
     }
 
