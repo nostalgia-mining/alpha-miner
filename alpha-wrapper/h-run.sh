@@ -24,7 +24,9 @@ BUFFER_FILE="$BUFFER_DIR/miner-raw.buf"
 mkdir -p "$(dirname "$LOG")" 2>/dev/null
 mkdir -p /var/run/hive 2>/dev/null
 mkdir -p "$BUFFER_DIR"  2>/dev/null
-touch "$BUFFER_FILE"    2>/dev/null
+
+# Clear buffer from any previous session before helpers start
+> "$BUFFER_FILE"
 
 # Wrapper's own startup messages go to screen and persistent log
 exec > >(exec tee -a "$LOG") 2>&1
