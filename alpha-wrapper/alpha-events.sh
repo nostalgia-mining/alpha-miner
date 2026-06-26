@@ -125,8 +125,10 @@ process_line() {
             [[ -n "$diff" ]] && GPU_DIFF[$gpu_idx]="$diff"
             if [[ -n "$job_id" && "$job_id" != "$LAST_JOB_ID" ]]; then
                 LAST_JOB_ID="$job_id"
-                local short="${job_id:0:8}...${job_id: -8}"
-                log_print "[${hhmm}] GPU ${gpu_idx} New job (${short})  gen=${gen}  diff=${diff}"
+                local _line
+                printf -v _line "[%s] GPU %-2s New job generation=%-6s diff=%-9s jid=%s" \
+                    "$hhmm" "$gpu_idx" "$gen" "$diff" "$job_id"
+                log_print "$_line"
             fi
         fi
 
@@ -205,9 +207,10 @@ process_line() {
         local short_job="${job_id:0:8}"
         local ping_str="n/a"
         (( ping_ms > 0 )) && ping_str="${ping_ms} ms"
-        # Fixed-width ping field (10 chars) so diff/job columns align
-        printf -v ping_field "%-10s" "(${ping_str})"
-        log_print "[${hhmm}] GPU ${gpu_idx} Share accepted ${ping_field} diff=${diff}   job=${short_job}   [${local_acc}/${local_rej}]"
+        local _line
+        printf -v _line "[%s] GPU %-2s Share accepted %-12s diff=%-9s job=%-10s [%s/%s]" \
+            "$hhmm" "$gpu_idx" "(${ping_str})" "$diff" "$short_job" "$local_acc" "$local_rej"
+        log_print "$_line"
 
     elif [[ "$component" == "share" ]] && [[ "$line" =~ "rejected" || "$line" =~ "dropped" ]]; then
         local hhmm; hhmm="$(date +'%Y-%m-%d %H:%M:%S')"
@@ -226,8 +229,10 @@ process_line() {
         local diff="${GPU_DIFF[$gpu_idx]:-?}"
         local label="REJECTED"
         [[ "$line" =~ "dropped" ]] && label="DROPPED"
-        printf -v label_field "%-10s" "${label}"
-        log_print "[${hhmm}] GPU ${gpu_idx} Share ${label_field} diff=${diff}   [${local_acc}/${local_rej}]"
+        local _line
+        printf -v _line "[%s] GPU %-2s Share %-12s diff=%-9s [%s/%s]" \
+            "$hhmm" "$gpu_idx" "$label" "$diff" "$local_acc" "$local_rej"
+        log_print "$_line"
     fi
 }
 
