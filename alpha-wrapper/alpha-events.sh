@@ -126,7 +126,7 @@ process_line() {
             if [[ -n "$job_id" && "$job_id" != "$LAST_JOB_ID" ]]; then
                 LAST_JOB_ID="$job_id"
                 local _line
-                printf -v _line "[%s] GPU %-2s New job generation=%-6s diff=%-9s jid=%s" \
+                printf -v _line "[%s] GPU %-2s New job generation=%-6s diff=%-8s jid=%s" \
                     "$hhmm" "$gpu_idx" "$gen" "$diff" "$job_id"
                 log_print "$_line"
             fi
@@ -208,7 +208,7 @@ process_line() {
         local ping_str="n/a"
         (( ping_ms > 0 )) && ping_str="${ping_ms} ms"
         local _line
-        printf -v _line "[%s] GPU %-2s Share accepted %-12s diff=%-9s job=%-10s [%s/%s]" \
+        printf -v _line "[%s] GPU %-2s Share accepted %-11s diff=%-8s job=%-10s [%s/%s]" \
             "$hhmm" "$gpu_idx" "(${ping_str})" "$diff" "$short_job" "$local_acc" "$local_rej"
         log_print "$_line"
 
@@ -230,7 +230,7 @@ process_line() {
         local label="REJECTED"
         [[ "$line" =~ "dropped" ]] && label="DROPPED"
         local _line
-        printf -v _line "[%s] GPU %-2s Share %-12s diff=%-9s [%s/%s]" \
+        printf -v _line "[%s] GPU %-2s Share %-12s diff=%-8s [%s/%s]" \
             "$hhmm" "$gpu_idx" "$label" "$diff" "$local_acc" "$local_rej"
         log_print "$_line"
     fi
