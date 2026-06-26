@@ -116,7 +116,7 @@ start_buffer_writer() {
             fi
 
             (( cnt++ ))
-            if (( cnt >= 500 )); then
+            if (( cnt >= 10000 )); then
                 tail -n "$BUFFER_LINES" "$BUFFER_FILE" > "${BUFFER_FILE}.tmp" \
                     && mv "${BUFFER_FILE}.tmp" "$BUFFER_FILE"
 
