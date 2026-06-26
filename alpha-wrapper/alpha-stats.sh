@@ -186,6 +186,7 @@ GPU_NAMES=() GPU_HASH_RAW=() GPU_EQUIV_RAW=()
 GPU_WATTS=() GPU_TEMP=() GPU_FAN=() GPU_CCLK=() GPU_MCLK=()
 GPU_ACC=() GPU_REJ=() GPU_DIFFS=()
 TOTAL_HASH_RAW=0 TOTAL_EQUIV_RAW=0 TOTAL_WATTS=0 TOTAL_ACC=0 TOTAL_REJ=0
+CURRENT_POOL="${POOL_HOST#stratum+tcp://}"
 
 collect_gpu_metrics() {
     GPU_NAMES=(); GPU_HASH_RAW=(); GPU_EQUIV_RAW=()
@@ -195,6 +196,16 @@ collect_gpu_metrics() {
 
     # Cache buffer content once for all GPUs (avoids repeated tail+grep)
     _BUF_CACHE=$(tail -n "$HSTATS_RAW_LINES" "$BUFFER_FILE" 2>/dev/null)
+
+    # Detect current pool from latest "connected" event in buffer
+    local conn_line
+    conn_line=$(printf '%s\n' "$_BUF_CACHE" | grep -a "component=pool connected" | tail -n1)
+    if [[ -n "$conn_line" ]]; then
+        local _h="" _p=""
+        [[ "$conn_line" =~ [[:space:]]host=([^[:space:]]+) ]] && _h="${BASH_REMATCH[1]}"
+        [[ "$conn_line" =~ [[:space:]]port=([^[:space:]]+) ]] && _p="${BASH_REMATCH[1]}"
+        [[ -n "$_h" ]] && CURRENT_POOL="${_h}:${_p}"
+    fi
 
     for pos in "${!GPU_IDX_LIST[@]}"; do
         local idx="${GPU_IDX_LIST[$pos]}"
@@ -283,7 +294,7 @@ collect_ping() {
     # Real TCP ping to pool host:port via /dev/tcp (always available in bash).
     # Measures TCP connect time = network round-trip latency.
     LAST_PING_MS=0
-    local host="${POOL_HOST#stratum+tcp://}"
+    local host="$CURRENT_POOL"
     local pool_h="${host%%:*}"
     local pool_p="${host##*:}"
     [[ -z "$pool_h" || -z "$pool_p" ]] && return
@@ -440,7 +451,7 @@ render() {
     local pool_hr;   pool_hr="$(fmt_pool_hr "$TOTAL_EQUIV_RAW")"
     local ping_str="n/a"
     (( LAST_PING_MS > 0 )) && ping_str="${LAST_PING_MS} ms"
-    local pool_disp="${POOL_HOST#stratum+tcp://}"
+    local pool_disp="$CURRENT_POOL"
 
     _frow() {
         local ll="$1" lv="$2" rl="$3" rv="$4"
