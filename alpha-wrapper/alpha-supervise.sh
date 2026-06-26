@@ -198,20 +198,19 @@ while :; do
 
         # ---- Fatal miner error detection ------------------------------------
         # Some errors (e.g. "pool pipeline profile changed") require a full
-        # miner restart to recover. We detect these in the buffer and kill/
-        # restart the miner immediately rather than waiting for the failover
-        # dead-share timeout.
+        # miner restart to recover. Detect "miner error" or "restart miner"
+        # in the buffer and kill/restart on the SAME pool immediately.
         # Only act on errors whose timestamp is AFTER this launch.
-        err_line=$(grep -aE 'component=miner error=' "$BUFFER_FILE" 2>/dev/null | tail -n1)
+        err_line=$(grep -aE 'miner error|restart miner' "$BUFFER_FILE" 2>/dev/null | tail -n1)
         if [[ -n "$err_line" ]]; then
             err_ts="${err_line%% *}"
             err_epoch=$(date -d "${err_ts}" +%s 2>/dev/null || echo 0)
             if (( err_epoch >= launch )); then
-                echo "$(_ts) [INFO] miner error detected — restarting: $err_line"
+                echo "$(_ts) [WARN] miner error detected — full restart: $err_line"
                 # Remove error lines from buffer so we don't re-trigger after restart
-                grep -vaE 'component=miner error=' "$BUFFER_FILE" > "${BUFFER_FILE}.tmp" 2>/dev/null \
+                grep -vaE 'miner error|restart miner' "$BUFFER_FILE" > "${BUFFER_FILE}.tmp" 2>/dev/null \
                     && mv "${BUFFER_FILE}.tmp" "$BUFFER_FILE"
-                rotate="next"; break
+                rotate="same"; break
             fi
         fi
 
@@ -232,7 +231,13 @@ while :; do
 
     stop_miner
 
-    [[ "$rotate" == "primary" ]] && idx=0 || idx=$(( (idx + 1) % n ))
+    if [[ "$rotate" == "primary" ]]; then
+        idx=0
+    elif [[ "$rotate" == "same" ]]; then
+        : # stay on current pool index
+    else
+        idx=$(( (idx + 1) % n ))
+    fi
     (( idx == 0 )) && primary_retry_at=$(( $(now) + FAILOVER_RETURN_SEC ))
 
     sleep 2
