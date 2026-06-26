@@ -114,9 +114,9 @@ start_buffer_writer() {
         trap '' PIPE
 
         # Open events FIFO as a persistent file descriptor (fd 3).
-        # This prevents EOF on the reader side between writes.
-        # Will block until a reader opens the other end.
-        exec 3>"$EVENTS_PIPE" 2>/dev/null
+        # Using read-write mode (<>) so the open never blocks, even if
+        # no reader is connected yet. Writes silently fail if no reader.
+        exec 3<>"$EVENTS_PIPE" 2>/dev/null
 
         while IFS= read -r line; do
             printf '%s\n' "$line" >> "$BUFFER_FILE"
