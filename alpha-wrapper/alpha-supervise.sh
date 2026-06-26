@@ -113,11 +113,16 @@ start_buffer_writer() {
         # Ignore SIGPIPE so writing to a broken events pipe doesn't kill us
         trap '' PIPE
 
+        # Open events FIFO as a persistent file descriptor (fd 3).
+        # This prevents EOF on the reader side between writes.
+        # Will block until a reader opens the other end.
+        exec 3>"$EVENTS_PIPE" 2>/dev/null
+
         while IFS= read -r line; do
             printf '%s\n' "$line" >> "$BUFFER_FILE"
 
-            # Feed to events script via FIFO (silently fails if reader is dead)
-            printf '%s\n' "$line" >> "$EVENTS_PIPE" 2>/dev/null
+            # Feed to events script via FIFO fd (silently fails if reader is dead)
+            printf '%s\n' "$line" >&3 2>/dev/null
 
             # Capture head (first HEAD_LINES lines only, once per session)
             hc=$(cat "$head_cnt_file" 2>/dev/null || echo 0)
