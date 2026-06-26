@@ -24,6 +24,7 @@ log_print() {
 # ===== State per GPU ==========================================================
 declare -A LAST_HITS_COUNT=()
 declare -A LAST_ACC_COUNT=()
+declare -A LAST_DROPPED_COUNT=()
 declare -A DISPLAY_ACC=()   # Our own accepted counter (incremented on share accepted event)
 declare -A DISPLAY_REJ=()   # Our own rejected counter (incremented on share rejected/dropped event)
 declare -A GPU_HIT_QUEUE=()  # Queue of hit timestamps per GPU (space-separated)
@@ -121,11 +122,13 @@ process_line() {
         fi
 
     elif [[ "$component" == "miner" ]] && [[ "$line" =~ [[:space:]]"status"[[:space:]] ]]; then
-        local hits=0 acc=0
+        local hits=0 acc=0 dropped=0
         [[ "$line" =~ [[:space:]]hits=([0-9]+) ]] && hits="${BASH_REMATCH[1]}"
         [[ "$line" =~ [[:space:]]accepted=([0-9]+) ]] && acc="${BASH_REMATCH[1]}"
+        [[ "$line" =~ [[:space:]]dropped=([0-9]+) ]] && dropped="${BASH_REMATCH[1]}"
         local prev_hits="${LAST_HITS_COUNT[$gpu_idx]:-0}"
         local prev_acc="${LAST_ACC_COUNT[$gpu_idx]:-0}"
+        local prev_dropped="${LAST_DROPPED_COUNT[$gpu_idx]:-0}"
 
         # Only queue a hit timestamp on exactly +1 increment (ignore duplicates/jumps)
         if (( hits == prev_hits + 1 )); then
@@ -134,8 +137,20 @@ process_line() {
         fi
         (( hits > prev_hits )) && LAST_HITS_COUNT[$gpu_idx]="$hits"
 
-        # Track accepted count — pop queue on +1 increment (share accepted via status line)
-        # This handles the case where component=share accepted line is missing
+        # Track dropped count — pop queue when dropped increments (silent share loss)
+        if (( dropped > prev_dropped )); then
+            local drops_to_pop=$(( dropped - prev_dropped ))
+            while (( drops_to_pop > 0 )) && [[ -n "${GPU_HIT_QUEUE[$gpu_idx]:-}" ]]; do
+                local queue="${GPU_HIT_QUEUE[$gpu_idx]}"
+                local _discard
+                read -r _discard queue <<< "$queue"
+                GPU_HIT_QUEUE[$gpu_idx]="$queue"
+                (( drops_to_pop-- ))
+            done
+            LAST_DROPPED_COUNT[$gpu_idx]="$dropped"
+        fi
+
+        # Track accepted count
         if (( acc == prev_acc + 1 )); then
             # Don't pop here — let the component=share accepted handler do it
             :
