@@ -61,9 +61,6 @@ init_from_buffer() {
 while [[ ! -f "$EVENTS_FILE" ]]; do sleep 0.5; done
 init_from_buffer
 
-# Start reading from byte 0 — sidecar is cleared on each miner launch
-current_offset=0
-
 # ===== Main read loop =========================================================
 # The sidecar (events.log) NEVER gets trimmed — only grows with meaningful
 # events (~12 lines/min). No trim = no lost lines = no ping desync.
@@ -89,7 +86,7 @@ process_line() {
     fi
 
     if [[ "$component" == "pool" ]]; then
-        local hhmm; hhmm="$(date +'%Y-%m-%d %H:%M:%S')"
+        local hhmm="$ts"
         if [[ "$line" =~ "drop_ambiguous_share" || "$line" =~ "action=reconnect_drop" ]]; then
             # Pool silently dropped a share during reconnect — pop from hit queue
             if [[ -n "${GPU_HIT_QUEUE[$gpu_idx]:-}" ]]; then
@@ -180,11 +177,11 @@ process_line() {
         fi
         if (( actual_len != expected_inflight )); then
             GPU_HIT_QUEUE[$gpu_idx]=""
-            log_print "[$(date +'%Y-%m-%d %H:%M:%S')] [DEBUG] Queue reset: gpu=$gpu_idx hits=$hits acc=$acc dropped=$dropped expected=$expected_inflight actual=$actual_len"
+            log_print "[$ts] [DEBUG] Queue reset: gpu=$gpu_idx hits=$hits acc=$acc dropped=$dropped expected=$expected_inflight actual=$actual_len"
         fi
 
     elif [[ "$component" == "share" ]] && [[ "$line" =~ "accepted" ]]; then
-        local hhmm; hhmm="$(date +'%Y-%m-%d %H:%M:%S')"
+        local hhmm="$ts"
         local job_id=""
         [[ "$line" =~ [[:space:]]job=([^[:space:]]+) ]] && job_id="${BASH_REMATCH[1]}"
         local ping_ms=0
@@ -217,7 +214,7 @@ process_line() {
         log_print "$_line"
 
     elif [[ "$component" == "share" ]] && [[ "$line" =~ "rejected" || "$line" =~ "dropped" ]]; then
-        local hhmm; hhmm="$(date +'%Y-%m-%d %H:%M:%S')"
+        local hhmm="$ts"
         # Pop from hit queue to keep it in sync (same as accepted, but no ping)
         if [[ -n "${GPU_HIT_QUEUE[$gpu_idx]:-}" ]]; then
             local queue="${GPU_HIT_QUEUE[$gpu_idx]}"
@@ -240,16 +237,9 @@ process_line() {
     fi
 }
 
-while true; do
-    local_size=$(wc -c < "$EVENTS_FILE" 2>/dev/null || echo 0)
-    if (( local_size > current_offset )); then
-        # Read only the new bytes — use process substitution (not pipe) to
-        # avoid a subshell, so variable updates (GPU_HIT_QUEUE, LAST_HITS_COUNT)
-        # persist across poll cycles.
-        while IFS= read -r line; do
-            process_line "$line"
-        done < <(tail -c +$((current_offset + 1)) "$EVENTS_FILE" 2>/dev/null)
-        current_offset=$local_size
-    fi
-    sleep 0.2
-done
+# Use tail -f for instant line delivery. Since the sidecar never gets
+# replaced (mv) or trimmed, tail -f works perfectly via inotify.
+# No polling, no partial lines, no missed data.
+while IFS= read -r line; do
+    process_line "$line"
+done < <(tail -f -n +1 "$EVENTS_FILE" 2>/dev/null)
