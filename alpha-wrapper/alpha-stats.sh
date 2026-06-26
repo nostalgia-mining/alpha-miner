@@ -165,8 +165,10 @@ tprint() {
 # ===== Diff per GPU from buffer ===============================================
 get_gpu_diff() {
     local idx="$1"
+    # Use cached buffer content if available
     local val
-    val=$(grep -a "component=pool" "$BUFFER_FILE" 2>/dev/null \
+    val=$(printf '%s\n' "$_BUF_CACHE" 2>/dev/null \
+          | grep -a "component=pool" \
           | grep -a " gpu=${idx}:" \
           | grep -a " difficulty=" \
           | tail -n1 \
@@ -191,15 +193,25 @@ collect_gpu_metrics() {
     GPU_ACC=(); GPU_REJ=(); GPU_DIFFS=()
     TOTAL_HASH_RAW=0; TOTAL_EQUIV_RAW=0; TOTAL_WATTS=0; TOTAL_ACC=0; TOTAL_REJ=0
 
+    # Cache buffer content once for all GPUs (avoids repeated tail+grep)
+    _BUF_CACHE=$(tail -n "$HSTATS_RAW_LINES" "$BUFFER_FILE" 2>/dev/null)
+
     for pos in "${!GPU_IDX_LIST[@]}"; do
         local idx="${GPU_IDX_LIST[$pos]}"
+
+        # Single nvidia-smi call per GPU — all metrics at once
+        local nvsmi_line
+        nvsmi_line=$(nvidia-smi -i "$idx" --query-gpu=name,temperature.gpu,fan.speed,clocks.sm,clocks.mem,power.draw --format=csv,noheader,nounits 2>/dev/null)
         local name temp fan cclk mclk watts
-        name="$(nvidia-smi -i "$idx" --query-gpu=name            --format=csv,noheader 2>/dev/null | short_name)"
-        temp="$(nvidia-smi -i "$idx" --query-gpu=temperature.gpu --format=csv,noheader,nounits 2>/dev/null)"
-        fan="$( nvidia-smi -i "$idx" --query-gpu=fan.speed       --format=csv,noheader,nounits 2>/dev/null)"
-        cclk="$(nvidia-smi -i "$idx" --query-gpu=clocks.sm       --format=csv,noheader,nounits 2>/dev/null)"
-        mclk="$(nvidia-smi -i "$idx" --query-gpu=clocks.mem      --format=csv,noheader,nounits 2>/dev/null)"
-        watts="$(nvidia-smi -i "$idx" --query-gpu=power.draw     --format=csv,noheader,nounits 2>/dev/null)"
+        IFS=',' read -r name temp fan cclk mclk watts <<< "$nvsmi_line"
+        # Trim whitespace
+        name="${name## }"; name="${name%% }"; name=$(echo "$name" | short_name)
+        temp="${temp## }"; temp="${temp%% }"
+        fan="${fan## }";   fan="${fan%% }"
+        cclk="${cclk## }"; cclk="${cclk%% }"
+        mclk="${mclk## }"; mclk="${mclk%% }"
+        watts="${watts## }"; watts="${watts%% }"
+
         [[ -z "$name"  ]] && name="n/a"
         [[ -z "$temp"  ]] && temp="n/a"
         [[ -z "$fan"   ]] && fan="n/a"
@@ -207,11 +219,7 @@ collect_gpu_metrics() {
         [[ -z "$mclk"  ]] && mclk="n/a"
         [[ -z "$watts" || "$watts" == "N/A" ]] && watts=0
         watts=$(awk -v w="$watts" 'BEGIN{printf "%.1f", w+0}')
-        # Build temp/fan strings with consistent visual width.
-        # °C is 2 bytes (UTF-8) but 1 visual char. printf %-5s counts bytes,
-        # so "80°C" (5 bytes) gets no padding. We pad manually to 5 visual chars:
-        #   2-digit temp: "80°C " → 5 visual chars (6 bytes for printf)
-        #   3-digit temp: "100°C" → 5 visual chars (6 bytes for printf)
+
         if [[ -n "$temp" && "$temp" =~ ^[0-9]+$ ]] && (( temp < 100 )); then
             temp="${temp}°C "
         else
@@ -219,14 +227,14 @@ collect_gpu_metrics() {
         fi
         fan="${fan}%"
 
-        mapfile -t hash_samp < <(
-            tail -n "$HSTATS_RAW_LINES" "$BUFFER_FILE" 2>/dev/null \
-            | grep -a "component=miner status" | grep -a " gpu=${idx}:" \
+        # Filter status lines for this GPU from cached buffer (single pass)
+        local gpu_status
+        gpu_status=$(printf '%s\n' "$_BUF_CACHE" | grep -a "component=miner status" | grep -a " gpu=${idx}:")
+
+        mapfile -t hash_samp < <(printf '%s\n' "$gpu_status" \
             | grep -oE '[[:space:]]hashrate_th_s=[0-9.]+' | grep -oE '[0-9.]+' \
             | awk '{printf "%.0f\n", $1*1e12}' | tail -n "$MAX_SAMPLES")
-        mapfile -t equiv_samp < <(
-            tail -n "$HSTATS_RAW_LINES" "$BUFFER_FILE" 2>/dev/null \
-            | grep -a "component=miner status" | grep -a " gpu=${idx}:" \
+        mapfile -t equiv_samp < <(printf '%s\n' "$gpu_status" \
             | grep -oE '[[:space:]]share_equiv_th_s=[0-9.]+' | grep -oE '[0-9.]+' \
             | awk '{printf "%.0f\n", $1*1e12}' | tail -n "$MAX_SAMPLES")
 
@@ -239,8 +247,7 @@ collect_gpu_metrics() {
         (( ${#equiv_samp[@]} > 0 )) && avg_equiv=$(printf '%s\n' "${equiv_samp[@]}" | awk '{s+=$1} END{printf "%.0f",s/NR}')
 
         local last_stat acc=0 rej=0
-        last_stat=$(tail -n "$HSTATS_RAW_LINES" "$BUFFER_FILE" 2>/dev/null \
-            | grep -a "component=miner status" | grep -a " gpu=${idx}:" | tail -n1)
+        last_stat=$(printf '%s\n' "$gpu_status" | tail -n1)
         [[ "$last_stat" =~ [[:space:]]accepted=([0-9]+) ]] && acc="${BASH_REMATCH[1]}"
         [[ "$last_stat" =~ [[:space:]]rejected=([0-9]+) ]] && rej="${BASH_REMATCH[1]}"
 
@@ -261,7 +268,7 @@ collect_gpu_metrics() {
 LAST_SHARE_AGO=-1
 collect_share_metrics() {
     local last_ts
-    last_ts=$(tail -n "$HSTATS_RAW_LINES" "$BUFFER_FILE" 2>/dev/null \
+    last_ts=$(printf '%s\n' "$_BUF_CACHE" \
         | grep -a "component=share accepted" | tail -n1 \
         | grep -oE '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}')
     LAST_SHARE_AGO=-1
