@@ -12,18 +12,9 @@
 set -u
 
 BUFFER_FILE="${BUFFER_FILE:-/run/alpha-wrapper/miner-raw.buf}"
-LOG_FILE="${LOG_FILE:-/var/log/miner/custom/alpha-wrapper.log}"
 GPU_LIST="${GPU_LIST:-0}"
 
-# ===== Colors — all disabled for plain text output ============================
-G=''   # was green
-Y=''   # was yellow
-R=''   # was reset
-RD=''  # was red
-W=''   # was white
-B=''   # was bold
-
-# Helper: print to stdout only (h-run.sh tee strips ANSI and writes to log)
+# Helper: print to stdout only (h-run.sh tee handles the log file)
 log_print() {
     printf '%s\n' "$1"
 }
@@ -36,8 +27,7 @@ declare -A DISPLAY_REJ=()   # Our own rejected counter (incremented on share rej
 declare -A GPU_HIT_QUEUE=()  # Queue of hit timestamps per GPU (space-separated)
 declare -A GPU_DIFF=()
 LAST_JOB_ID=""
-LAST_POOL_HOST=""    # track reconnects
-SESSION_START=$(date +%s)
+LAST_POOL_HOST=""
 
 # ===== Timestamp -> milliseconds ==============================================
 ts_to_ms() {
@@ -45,6 +35,7 @@ ts_to_ms() {
     local sec_part="${ts%.*}"
     local frac="${ts##*.}"; frac="${frac%Z}"; frac="${frac:0:3}"
     while (( ${#frac} < 3 )); do frac="${frac}0"; done
+    # date -d is called ~4 times/min (on hit/acceptance only) — acceptable cost
     local ep; ep=$(date -d "${sec_part}Z" +%s 2>/dev/null) || ep=0
     echo $(( ep * 1000 + 10#$frac ))
 }
