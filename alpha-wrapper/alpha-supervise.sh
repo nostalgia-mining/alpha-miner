@@ -96,13 +96,36 @@ start_buffer_writer() {
     local raw_log="/var/log/miner/custom/alpha-wrapper-raw.log"
     local raw_log_max=209715200  # 200 MB in bytes
     local extralogs="${WRAPPER_EXTRALOGS:-0}"
+
+    # Sidecar file: contains only meaningful events (no repetitive status lines).
+    # The events script reads from this file — it never gets trimmed.
+    local sidecar="$BUFFER_DIR/events.log"
+    > "$sidecar"  # clear on each miner launch
     
     (
         local cnt=0
         local hc=7  # 7 lines already in head file from banner above
+        local prev_hits=-1  # track hits to detect changes
 
         while IFS= read -r line; do
             printf '%s\n' "$line" >> "$BUFFER_FILE"
+
+            # ---- Sidecar: write meaningful events only ----
+            # Include: component=pool, component=share, miner errors,
+            #          and component=miner status ONLY when hits changes.
+            if [[ "$line" == *"component=pool"* || "$line" == *"component=share"* || "$line" == *"miner error"* || "$line" == *"restart miner"* ]]; then
+                printf '%s\n' "$line" >> "$sidecar"
+            elif [[ "$line" == *"component=miner status"* ]]; then
+                # Extract hits value and only write if it changed
+                local cur_hits
+                if [[ "$line" =~ [[:space:]]hits=([0-9]+) ]]; then
+                    cur_hits="${BASH_REMATCH[1]}"
+                    if (( cur_hits != prev_hits )); then
+                        printf '%s\n' "$line" >> "$sidecar"
+                        prev_hits=$cur_hits
+                    fi
+                fi
+            fi
 
             # Capture head (first HEAD_LINES lines only, once per session)
             if (( hc < HEAD_LINES )); then

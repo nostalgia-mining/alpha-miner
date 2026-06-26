@@ -2,16 +2,18 @@
 #
 # alpha-events.sh -- real-time event printer for alpha-wrapper
 #
-# Reads only NEW lines from the rolling buffer (from current EOF at launch time)
-# so miner restarts never replay old events or inflate counters.
+# Reads from the events sidecar file (/run/alpha-wrapper/events.log) which
+# contains only meaningful events (pool, share, hit changes). This file
+# NEVER gets trimmed, so no lines are ever lost — eliminating ping desync.
 #
 # Env vars:
-#   BUFFER_FILE   /run/alpha-wrapper/miner-raw.buf
-#   LOG_FILE      /var/log/miner/custom/alpha-wrapper.log (written by h-run.sh tee)
+#   BUFFER_FILE   /run/alpha-wrapper/miner-raw.buf (for counter init only)
+#   EVENTS_FILE   /run/alpha-wrapper/events.log (sidecar — never trimmed)
 #   GPU_LIST      comma-separated active CUDA indices
 set -u
 
 BUFFER_FILE="${BUFFER_FILE:-/run/alpha-wrapper/miner-raw.buf}"
+EVENTS_FILE="${EVENTS_FILE:-/run/alpha-wrapper/events.log}"
 GPU_LIST="${GPU_LIST:-0}"
 
 # Helper: print to stdout only (h-run.sh tee handles the log file)
@@ -40,21 +42,30 @@ ts_to_ms() {
     echo $(( ep * 1000 + 10#$frac ))
 }
 
-# ===== Wait for buffer and start from current EOF ============================
-while [[ ! -f "$BUFFER_FILE" ]]; do sleep 1; done
+# ===== Initialize counters from buffer (for seamless restart) =================
+init_from_buffer() {
+    [[ ! -f "$BUFFER_FILE" ]] && return
+    for idx in ${GPU_LIST//,/ }; do
+        local last_status
+        last_status=$(grep -a "component=miner status" "$BUFFER_FILE" 2>/dev/null \
+            | grep -a " gpu=${idx}:" | tail -n 1)
+        if [[ -n "$last_status" ]]; then
+            [[ "$last_status" =~ [[:space:]]accepted=([0-9]+) ]] && DISPLAY_ACC[$idx]="${BASH_REMATCH[1]}"
+            [[ "$last_status" =~ [[:space:]]rejected=([0-9]+) ]] && DISPLAY_REJ[$idx]="${BASH_REMATCH[1]}"
+        fi
+    done
+}
 
-# Buffer is cleared on each miner launch by the supervisor, so no stale data.
-# Wait for first content to appear, then start processing from byte 0.
-while [[ ! -s "$BUFFER_FILE" ]]; do sleep 0.5; done
+# ===== Wait for sidecar to exist ==============================================
+while [[ ! -f "$EVENTS_FILE" ]]; do sleep 0.5; done
+init_from_buffer
 
-# Record current size — only process lines written AFTER this point.
-START_OFFSET=0
+# Start reading from byte 0 — sidecar is cleared on each miner launch
 current_offset=0
 
 # ===== Main read loop =========================================================
-# We can't use 'tail -f' because the buffer file gets atomically replaced
-# during trimming (mv .tmp -> .buf), which causes tail -f to lose its position.
-# Instead we poll with a byte-offset tracker, reading only new content.
+# The sidecar (events.log) NEVER gets trimmed — only grows with meaningful
+# events (~12 lines/min). No trim = no lost lines = no ping desync.
 
 process_line() {
     local line="$1"
@@ -186,20 +197,14 @@ process_line() {
 }
 
 while true; do
-    local_size=$(wc -c < "$BUFFER_FILE" 2>/dev/null || echo 0)
-    if (( local_size < current_offset )); then
-        # File was trimmed — skip to current end. We may miss 1-2 lines that
-        # were in-flight during the trim, but this is far better than replaying
-        # the entire buffer (which causes duplicate share events and inflated counters).
-        current_offset=$local_size
-    fi
+    local_size=$(wc -c < "$EVENTS_FILE" 2>/dev/null || echo 0)
     if (( local_size > current_offset )); then
         # Read only the new bytes — use process substitution (not pipe) to
         # avoid a subshell, so variable updates (GPU_HIT_QUEUE, LAST_HITS_COUNT)
         # persist across poll cycles.
         while IFS= read -r line; do
             process_line "$line"
-        done < <(tail -c +$((current_offset + 1)) "$BUFFER_FILE" 2>/dev/null)
+        done < <(tail -c +$((current_offset + 1)) "$EVENTS_FILE" 2>/dev/null)
         current_offset=$local_size
     fi
     sleep 0.5
