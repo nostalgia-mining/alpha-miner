@@ -108,10 +108,8 @@ POOL_HOST="${POOL_HOST#stratum+tcp://}"
 # ============================================================================
 # Launch on-screen helpers (event printer + stats table)
 # Both receive BUFFER_FILE, LOG_FILE, GPU_LIST, WALLET, POOL_HOST
-# Events script gets EVENTS_PIPE and runs in a restart wrapper.
 # ============================================================================
 ENABLE_STATS=$(( ! ${WRAPPER_NOSTATS:-0} ))
-EVENTS_PIPE="$BUFFER_DIR/events.pipe"
 
 _launch() {
     local script="$1" pidfile="$2" label="$3"
@@ -120,7 +118,6 @@ _launch() {
         return  # already running
     fi
     BUFFER_FILE="$BUFFER_FILE" \
-    EVENTS_PIPE="$EVENTS_PIPE" \
     LOG_FILE="$LOG" \
     GPU_LIST="$GPU_LIST" \
     WALLET="${WALLET:-unknown}" \
@@ -130,29 +127,8 @@ _launch() {
     echo "$(_ts) [INFO] $label started (PID $!)"
 }
 
-# Events script auto-restarts if it exits (pipe break, crash, etc.)
-_launch_events() {
-    local script="$1" pidfile="$2" label="$3"
-    [[ -x "$script" ]] || { echo "$(_ts) [WARN] $label not executable: $script"; return; }
-    (
-        while true; do
-            BUFFER_FILE="$BUFFER_FILE" \
-            EVENTS_PIPE="$EVENTS_PIPE" \
-            LOG_FILE="$LOG" \
-            GPU_LIST="$GPU_LIST" \
-            WALLET="${WALLET:-unknown}" \
-            POOL_HOST="$POOL_HOST" \
-                "$script"
-            # If we get here, the events script exited — wait briefly then restart
-            sleep 1
-        done
-    ) &
-    echo $! > "$pidfile"
-    echo "$(_ts) [INFO] $label started (PID $!, auto-restart)"
-}
-
 if [[ "$ENABLE_STATS" == "1" ]]; then
-    _launch_events "$EVENTS_SCRIPT" "$EVENTS_PIDFILE" "Event printer"
+    _launch "$EVENTS_SCRIPT" "$EVENTS_PIDFILE" "Event printer"
     _launch "$STATS_SCRIPT"  "$STATS_PIDFILE"  "Stats table"
 else
     echo "$(_ts) [INFO] On-screen output disabled (--nostats)"

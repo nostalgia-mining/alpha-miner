@@ -74,21 +74,10 @@ writer_pid=""
 
 # ---- Rolling buffer writer --------------------------------------------------
 # Reads from a named pipe, appends to rolling buffer, trims every 500 writes.
-# Also feeds lines to the events script via a FIFO and writes to the
-# persistent raw log (if --extralogs enabled).
+# Also captures the first HEAD_LINES lines to a permanent head file for debugging.
 HEAD_FILE="$BUFFER_DIR/miner-raw-head.buf"   # in RAM — symlinked to log dir if --extralogs
 HEAD_LINES=1000
 HEAD_LOG="/var/log/miner/custom/alpha-wrapper-raw-head.log"
-EVENTS_PIPE="$BUFFER_DIR/events.pipe"
-
-# Create the events FIFO (recreate on each supervisor start)
-rm -f "$EVENTS_PIPE" 2>/dev/null
-mkfifo "$EVENTS_PIPE" 2>/dev/null
-
-# Open a background dummy reader so the writer's open(O_WRONLY) never blocks.
-# The events script will also read from the FIFO — data goes to it.
-sleep infinity < "$EVENTS_PIPE" &
-DUMMY_READER_PID=$!
 
 start_buffer_writer() {
     local pipe="$1"
@@ -115,18 +104,8 @@ start_buffer_writer() {
     local extralogs="${WRAPPER_EXTRALOGS:-0}"
     
     (
-        # Ignore SIGPIPE so writing to a broken events pipe doesn't kill us
-        trap '' PIPE
-
-        # Open events FIFO as a persistent write-only file descriptor (fd 3).
-        # The dummy reader (sleep infinity) ensures this open never blocks.
-        exec 3>"$EVENTS_PIPE" 2>/dev/null
-
         while IFS= read -r line; do
             printf '%s\n' "$line" >> "$BUFFER_FILE"
-
-            # Feed to events script via FIFO fd (silently fails if reader is dead)
-            printf '%s\n' "$line" >&3 2>/dev/null
 
             # Capture head (first HEAD_LINES lines only, once per session)
             hc=$(cat "$head_cnt_file" 2>/dev/null || echo 0)
@@ -184,7 +163,6 @@ on_stop() {
     trap - INT TERM
     echo "$(_ts) [INFO] stop signal — shutting down miner"
     stop_miner
-    [[ -n "${DUMMY_READER_PID:-}" ]] && kill "$DUMMY_READER_PID" 2>/dev/null
     exit 0
 }
 trap on_stop INT TERM
