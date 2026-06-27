@@ -430,13 +430,31 @@ render() {
     tprint "${G}${ts} ${_ltitle} ${_rtitle}${R}"
     tprint "${G}${ts} ${BAR_EQ}${R}"
 
-    # Compute TTF (with one decimal)
-    local diff_0="${GPU_DIFFS[0]:-524288}"
-    [[ "$diff_0" == "?" ]] && diff_0=524288
+    # Compute TTF (combined rate across all GPUs, handles mixed difficulties)
+    # TTF_total = 1 / (sum of 1/TTF_i for each GPU)
+    # Where TTF_i = diff_i / (hashrate_i_TH × POOL_RATE_DIVISOR)
+    # For vardiff: uses the CURRENT difficulty per GPU (updates each new job)
     local ttf_str="n/a" ttf_secs=0
     if (( TOTAL_HASH_RAW > 0 )); then
-        ttf_secs=$(awk -v d="$diff_0" -v rate="$POOL_RATE_DIVISOR" -v h="$TOTAL_HASH_RAW" \
-            'BEGIN{printf "%.1f", d / ((h/1e12) * rate)}')
+        local _diffs="" _hashes=""
+        for i in "${!GPU_IDX_LIST[@]}"; do
+            local d="${GPU_DIFFS[$i]:-524288}"
+            [[ "$d" == "?" ]] && d=524288
+            _diffs="${_diffs} $d"
+            _hashes="${_hashes} ${GPU_HASH_RAW[$i]}"
+        done
+        ttf_secs=$(awk -v diffs="$_diffs" -v hashes="$_hashes" -v rate="$POOL_RATE_DIVISOR" \
+            'BEGIN{
+                n = split(diffs, d); split(hashes, h)
+                sum_rate = 0
+                for (i=1; i<=n; i++) {
+                    hr_th = h[i] / 1e12
+                    if (hr_th > 0 && d[i] > 0)
+                        sum_rate += (hr_th * rate) / d[i]
+                }
+                if (sum_rate > 0) printf "%.1f", 1.0 / sum_rate
+                else printf "0"
+            }')
         ttf_str="$(fmt_ttf "$ttf_secs")"
     fi
 
