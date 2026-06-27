@@ -248,7 +248,7 @@ EXISTING=$(curl -s \
     -H "Authorization: token $GH_TOKEN" \
     -H "Accept: application/vnd.github+json" \
     "https://api.github.com/repos/${REPO}/releases/tags/${TAG}" 2>/dev/null \
-    | grep '"id"' | head -1 | grep -oE '[0-9]+')
+    | grep '"id"' | head -1 | grep -oE '[0-9]+' || true)
 
 if [[ -n "$EXISTING" ]]; then
     echo "Release ${TAG} already exists (id=${EXISTING}) — will upload assets to it."
