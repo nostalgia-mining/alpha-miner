@@ -244,7 +244,7 @@ echo ""
 echo "Creating GitHub Release ${TAG}..."
 
 # Check if release already exists
-EXISTING=$(curl -sf \
+EXISTING=$(curl -s \
     -H "Authorization: token $GH_TOKEN" \
     -H "Accept: application/vnd.github+json" \
     "https://api.github.com/repos/${REPO}/releases/tags/${TAG}" 2>/dev/null \
@@ -255,7 +255,7 @@ if [[ -n "$EXISTING" ]]; then
     RELEASE_ID="$EXISTING"
 else
     # Create the release
-    RESPONSE=$(curl -sf \
+    RESPONSE=$(curl -s \
         -H "Authorization: token $GH_TOKEN" \
         -H "Accept: application/vnd.github+json" \
         -H "Content-Type: application/json" \
