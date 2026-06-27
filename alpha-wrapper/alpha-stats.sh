@@ -351,8 +351,8 @@ collect_ping() {
 #   7 spaces + "Pool" (4) + " : " = 14 chars before value
 #   Format: "%-7s%4s : %-s" padded to 45 chars
 #
-GPU_ROW_FMT="%2s %-17.17s  %12s  %-9s %6s  %-10s  %-5s  %-4s  %-4s  %-5s"
-HDR_ROW_FMT="%2s %-17s   %-12s %-9s %-6s  %-10s  %-5s  %-4s  %-4s  %-5s"
+GPU_ROW_FMT="%2s %-17.17s  %12s  %-9s %6s   %-10s  %-5s  %-4s  %-4s  %-5s"
+HDR_ROW_FMT="%2s %-17s   %-12s %-9s  %-6s  %-10s  %-5s  %-4s  %-4s  %-5s"
 
 render() {
     local ts; ts="[$(date +'%Y-%m-%d %H:%M:%S')]"
@@ -457,7 +457,7 @@ render() {
         fi
     fi
 
-    local pool_hr;   pool_hr="$(fmt_pool_hr "$TOTAL_EQUIV_RAW")"
+    local pool_hr; pool_hr="$(fmt_pool_hr "$TOTAL_EQUIV_RAW" | sed 's/^ *//')"
     local ping_str="n/a"
     (( LAST_PING_MS > 0 )) && ping_str="${LAST_PING_MS} ms"
     local pool_disp="$CURRENT_POOL"
