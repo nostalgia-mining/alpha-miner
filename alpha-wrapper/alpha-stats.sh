@@ -409,7 +409,7 @@ render() {
     local total_eff; total_eff="$(fmt_eff "$TOTAL_HASH_RAW" "$TOTAL_WATTS")"
     local total_sh="${TOTAL_ACC}/${TOTAL_REJ}"
     local total_row
-    printf -v total_row "   %-17s  %12s  %-9s %6s  %-10s" \
+    printf -v total_row "   %-17s  %12s  %-9s %6s   %-10s" \
         "Total" "$total_hr" "$total_sh" "$TOTAL_WATTS" "$total_eff"
     tprint "${G}${ts} ${total_row}${R}"
 
