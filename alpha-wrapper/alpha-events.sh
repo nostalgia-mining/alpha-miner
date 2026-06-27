@@ -86,7 +86,7 @@ process_line() {
     fi
 
     if [[ "$component" == "pool" ]]; then
-        local hhmm="$ts"
+        local hhmm; hhmm="$(date +'%Y-%m-%d %H:%M:%S')"
         if [[ "$line" =~ "drop_ambiguous_share" || "$line" =~ "action=reconnect_drop" ]]; then
             # Pool silently dropped a share during reconnect — pop from hit queue
             if [[ -n "${GPU_HIT_QUEUE[$gpu_idx]:-}" ]]; then
@@ -177,11 +177,11 @@ process_line() {
         fi
         if (( actual_len != expected_inflight )); then
             GPU_HIT_QUEUE[$gpu_idx]=""
-            log_print "[$ts] [DEBUG] Queue reset: gpu=$gpu_idx hits=$hits acc=$acc dropped=$dropped expected=$expected_inflight actual=$actual_len"
+            log_print "[$(date +'%Y-%m-%d %H:%M:%S')] [DEBUG] Queue reset: gpu=$gpu_idx hits=$hits acc=$acc dropped=$dropped expected=$expected_inflight actual=$actual_len"
         fi
 
     elif [[ "$component" == "share" ]] && [[ "$line" =~ "accepted" ]]; then
-        local hhmm="$ts"
+        local hhmm; hhmm="$(date +'%Y-%m-%d %H:%M:%S')"
         local job_id=""
         [[ "$line" =~ [[:space:]]job=([^[:space:]]+) ]] && job_id="${BASH_REMATCH[1]}"
         local ping_ms=0
@@ -214,7 +214,7 @@ process_line() {
         log_print "$_line"
 
     elif [[ "$component" == "share" ]] && [[ "$line" =~ "rejected" || "$line" =~ "dropped" ]]; then
-        local hhmm="$ts"
+        local hhmm; hhmm="$(date +'%Y-%m-%d %H:%M:%S')"
         # Pop from hit queue to keep it in sync (same as accepted, but no ping)
         if [[ -n "${GPU_HIT_QUEUE[$gpu_idx]:-}" ]]; then
             local queue="${GPU_HIT_QUEUE[$gpu_idx]}"

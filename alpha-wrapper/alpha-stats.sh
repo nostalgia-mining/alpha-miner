@@ -474,7 +474,7 @@ render() {
         tprint "${G}${ts} ${lc}|${rc}${R}"
     }
 
-    _frow "Time to find" "$ttf_str"   "Stratum" "$pool_disp"
+    _frow "Theoretical TTF" "$ttf_str"   "Stratum" "$pool_disp"
     _frow "Avg. between shares" "$avg_str"  "Ping" "$ping_str"
     _frow "Pool hashrate" "$pool_hr"   "Job" "$job_disp"
 
