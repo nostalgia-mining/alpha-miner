@@ -297,7 +297,7 @@ upload_asset() {
     local existing_id
     existing_id=$(echo "$assets_json" \
         | grep -B2 "\"name\": \"${filename}\"" \
-        | grep '"id":' | grep -oE '[0-9]+' | head -1)
+        | grep '"id":' | grep -oE '[0-9]+' | head -1 || true)
 
     if [[ -n "$existing_id" ]]; then
         echo "  Removing existing asset (id=${existing_id})..."
