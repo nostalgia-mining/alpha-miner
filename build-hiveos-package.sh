@@ -65,8 +65,15 @@ fi
 # ---- Download binary ---------------------------------------------------------
 if [[ -f "$BINARY_DEST" ]]; then
     echo "Binary already present: $BINARY_DEST  ($(du -sh "$BINARY_DEST" | cut -f1))"
-    echo "Skipping download. Delete it and re-run to force a fresh download."
-else
+    read -rp "Delete and re-download? [y/N]: " REDOWNLOAD
+    if [[ "${REDOWNLOAD,,}" == "y" ]]; then
+        rm -f "$BINARY_DEST"
+    else
+        echo "Keeping existing binary."
+    fi
+fi
+
+if [[ ! -f "$BINARY_DEST" ]]; then
     if [[ -n "$BINARY_URL" ]]; then
         echo "Downloading alpha-miner v${VERSION} from: $BINARY_URL"
         curl -L --fail --progress-bar -o "$BINARY_DEST" "$BINARY_URL"
@@ -357,18 +364,15 @@ echo "Cleaning HiveOS cached installation..."
 HIVE_MINER_DIR="/hive/miners/custom/alpha-wrapper"
 HIVE_DOWNLOAD="/hive/miners/custom/downloads/alpha-wrapper-V${VERSION}.tar.gz"
 
-if [[ -d "$HIVE_MINER_DIR" ]]; then
-    rm -rf "$HIVE_MINER_DIR"
-    echo "  Removed: $HIVE_MINER_DIR"
-else
-    echo "  Not found (skip): $HIVE_MINER_DIR"
-fi
-
 if [[ -f "$HIVE_DOWNLOAD" ]]; then
     rm -f "$HIVE_DOWNLOAD"
     echo "  Removed: $HIVE_DOWNLOAD"
+    if [[ -d "$HIVE_MINER_DIR" ]]; then
+        rm -rf "$HIVE_MINER_DIR"
+        echo "  Removed: $HIVE_MINER_DIR"
+    fi
 else
-    echo "  Not found (skip): $HIVE_DOWNLOAD"
+    echo "  No cached download found — skipping cleanup."
 fi
 
 echo ""
