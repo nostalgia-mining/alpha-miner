@@ -5,6 +5,8 @@
 
 GPU miner for the **Pearl (PRL)** network via [AlphaPool](https://pearl.alphapool.tech). NVIDIA only, CUDA driver **545+**, **0% dev fee**.
 
+📦 **[Download latest release](https://github.com/nostalgia-mining/alpha-miner/releases)**
+
 This fork adds an enhanced HiveOS wrapper with:
 
 - ✅ `--gpu` alias for `--devices` — use either flag to select GPUs
