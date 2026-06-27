@@ -6,25 +6,34 @@
 # tarball with correct Unix permissions and LF line endings.
 #
 # Usage:
-#   git clone https://github.com/nostalgia-mining/alpha-miner
-#   cd alpha-miner
-#   bash build-hiveos-package.sh
+#   bash build-hiveos-package.sh              # builds with default version (1.8.3)
+#   bash build-hiveos-package.sh 1.8.5        # builds with specified version (auto-detect URL)
+#   bash build-hiveos-package.sh 1.8.5 https://pearl.alphapool.tech/downloads/alpha-miner-1.8.5
+#                                             # builds with explicit binary URL
 #
 # Output:
-#   alpha-wrapper-V1.8.3.tar.gz  ← attach to a GitHub Release as asset
+#   alpha-wrapper-V{VERSION}.tar.gz
 
 set -euo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 WRAPPER_DIR="$SCRIPT_DIR/alpha-wrapper"
-VERSION="1.8.3"
-BINARY_FILENAME="alpha-miner"
-BINARY_URL="https://github.com/AlphaMine-Tech/alpha-miner/releases/download/v${VERSION}/${BINARY_FILENAME}"
+VERSION="${1:-1.8.3}"
+BINARY_URL="${2:-}"
 BINARY_DEST="$WRAPPER_DIR/alpha"      # HiveOS expects the binary named 'alpha'
 OUTPUT="$SCRIPT_DIR/alpha-wrapper-V${VERSION}.tar.gz"
 
-# Expected SHA256 of the alpha-miner Linux binary (from upstream SHA256SUMS)
-EXPECTED_SHA256="927f50f63343bb63b9e6eeed77d2959200e2c1df2022c84f47a117af50475fdb"
+# If no explicit URL, try sources in order
+if [[ -z "$BINARY_URL" ]]; then
+    # Try GitHub release first, then alphapool.tech
+    BINARY_URL_GITHUB="https://github.com/AlphaMine-Tech/alpha-miner/releases/download/v${VERSION}/alpha-miner"
+    BINARY_URL_ALPHAPOOL="https://pearl.alphapool.tech/downloads/alpha-miner-${VERSION}"
+fi
+
+# Known SHA256 hashes (add new versions here as they become known)
+declare -A KNOWN_SHA256=(
+    ["1.8.3"]="927f50f63343bb63b9e6eeed77d2959200e2c1df2022c84f47a117af50475fdb"
+)
 
 echo "================================================"
 echo " AlphaMiner PEARL — HiveOS package builder"
@@ -58,24 +67,40 @@ if [[ -f "$BINARY_DEST" ]]; then
     echo "Binary already present: $BINARY_DEST  ($(du -sh "$BINARY_DEST" | cut -f1))"
     echo "Skipping download. Delete it and re-run to force a fresh download."
 else
-    echo "Downloading alpha-miner v${VERSION}..."
-    curl -L --fail --progress-bar -o "$BINARY_DEST" "$BINARY_URL"
-    echo "Downloaded: $(du -sh "$BINARY_DEST" | cut -f1)"
+    if [[ -n "$BINARY_URL" ]]; then
+        echo "Downloading alpha-miner v${VERSION} from: $BINARY_URL"
+        curl -L --fail --progress-bar -o "$BINARY_DEST" "$BINARY_URL"
+    else
+        echo "Trying GitHub release..."
+        if curl -L --fail --progress-bar -o "$BINARY_DEST" "$BINARY_URL_GITHUB" 2>/dev/null; then
+            echo "Downloaded from GitHub."
+        else
+            echo "GitHub failed, trying alphapool.tech..."
+            curl -L --fail --progress-bar -o "$BINARY_DEST" "$BINARY_URL_ALPHAPOOL"
+            echo "Downloaded from alphapool.tech."
+        fi
+    fi
+    echo "Size: $(du -sh "$BINARY_DEST" | cut -f1)"
 fi
 
-# ---- Verify binary SHA256 ----------------------------------------------------
+# ---- Verify binary SHA256 (if known) ----------------------------------------
 echo ""
-echo "Verifying binary SHA256..."
-ACTUAL_SHA256=$(sha256sum "$BINARY_DEST" | awk '{print $1}')
-if [[ "$ACTUAL_SHA256" != "$EXPECTED_SHA256" ]]; then
-    echo "ERROR: SHA256 mismatch!"
-    echo "  Expected : $EXPECTED_SHA256"
-    echo "  Got      : $ACTUAL_SHA256"
-    echo "The downloaded binary may be corrupt or tampered. Aborting."
-    rm -f "$BINARY_DEST"
-    exit 1
+if [[ -n "${KNOWN_SHA256[$VERSION]:-}" ]]; then
+    echo "Verifying binary SHA256..."
+    ACTUAL_SHA256=$(sha256sum "$BINARY_DEST" | awk '{print $1}')
+    if [[ "$ACTUAL_SHA256" != "${KNOWN_SHA256[$VERSION]}" ]]; then
+        echo "ERROR: SHA256 mismatch!"
+        echo "  Expected : ${KNOWN_SHA256[$VERSION]}"
+        echo "  Got      : $ACTUAL_SHA256"
+        echo "The downloaded binary may be corrupt or tampered. Aborting."
+        rm -f "$BINARY_DEST"
+        exit 1
+    fi
+    echo "SHA256 OK: $ACTUAL_SHA256"
+else
+    echo "No known SHA256 for v${VERSION} — skipping verification."
+    echo "SHA256: $(sha256sum "$BINARY_DEST" | awk '{print $1}')"
 fi
-echo "SHA256 OK: $ACTUAL_SHA256"
 
 # ---- Safety check — no NOCKminer files --------------------------------------
 echo ""
