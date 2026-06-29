@@ -15,10 +15,9 @@
 #   --gpu 0,1,2           Alias for --devices
 #   --diff 524288         Static difficulty — single value applied to all GPUs,
 #   --diff 524288,262144  or comma-separated per-GPU values.
-#                         Translates to --password 'x;d=VALUE' (or appends to
-#                         existing password if user also set one).
-#                         If user already has d= in the Password field, --diff
-#                         takes precedence.
+#                         Translates to --password 'x;d=VALUE'.
+#                         Default if neither --diff nor --vardiff: 524288.
+#   --vardiff             Use pool-controlled variable difficulty (no --password).
 #   --nostats             Suppress on-screen stats
 #   FAILOVER_GRACE_SEC=N  Failover tunables
 #   FAILOVER_DEAD_SEC=N
@@ -64,6 +63,7 @@ declare -a EXTRA_ARGS=()
 declare -a WRAPPER_CFG=()
 WRAPPER_GPU_VAL=""
 WRAPPER_NOSTATS=0
+WRAPPER_VARDIFF=0
 WRAPPER_EXTRALOGS=0
 WRAPPER_DIFF_VAL=""   # value from --diff (e.g. "524288" or "524288,262144")
 
@@ -82,6 +82,12 @@ if [[ -n "${CUSTOM_USER_CONFIG:-}" ]]; then
         # ---- --nostats -------------------------------------------------------
         if [[ "$tok" == "--nostats" ]]; then
             WRAPPER_NOSTATS=1
+            (( i++ )); continue
+        fi
+
+        # ---- --vardiff (opt-in to pool vardiff instead of default 524288) ----
+        if [[ "$tok" == "--vardiff" ]]; then
+            WRAPPER_VARDIFF=1
             (( i++ )); continue
         fi
 
@@ -157,16 +163,23 @@ declare -a BASE_ARGS=(
 [[ -n "$worker" ]] && BASE_ARGS+=( --worker "$worker" )
 
 # ---- Password / difficulty ---------------------------------------------------
-# Priority: --diff extra config arg > Password field
+# Priority: --diff > default 524288 > --vardiff (no password)
 # --diff 524288            → --password 'x;d=524288'
 # --diff 524288,262144     → --password 'x;d=524288,262144'  (alpha-miner per-GPU syntax)
-# Password field set       → passed through as-is
-# Neither                  → no --password arg (vardiff)
+# --vardiff                → no --password arg (pool controls difficulty)
+# Neither (default)        → --password 'x;d=524288'
 pass="${CUSTOM_PASS:-}"
 
 if [[ -n "$WRAPPER_DIFF_VAL" ]]; then
     # --diff takes precedence; build password string
     pass="x;d=${WRAPPER_DIFF_VAL}"
+elif (( WRAPPER_VARDIFF )); then
+    # --vardiff: let pool control difficulty, no password
+    pass=""
+elif [[ -z "$pass" || "$pass" == "x" ]]; then
+    # Default: static diff 524288
+    WRAPPER_DIFF_VAL="524288"
+    pass="x;d=524288"
 fi
 
 [[ -n "$pass" ]] && BASE_ARGS+=( --password "$pass" )

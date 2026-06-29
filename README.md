@@ -26,7 +26,7 @@ This fork adds an enhanced HiveOS wrapper with:
 | Hash algorithm | `pearlhash` |
 | Wallet template | `%WAL%.%WORKER_NAME%` |
 | Pool URL | `stratum+tcp://%URL%` *(set pool endpoints directly in HiveOS Flight Sheet via Configure pool)* |
-| Password | `x` *(remember to set static difficulty via --diff in extra parameters)* |
+| Password | `x` *(leave as `x` — difficulty defaults to 524288; use `--diff` or `--vardiff` in extra config)* |
 
 ### Extra config arguments (all optional)
 
@@ -36,6 +36,7 @@ This fork adds an enhanced HiveOS wrapper with:
 | `--devices 0,1` | Native alpha-miner GPU selection — same effect as `--gpu` |
 | `--diff 524288` | Set static difficulty for all GPUs (alias for `x;d=N` in Password field) |
 | `--diff 524288,262144` | Per-GPU difficulty (comma-separated, one value per GPU) |
+| `--vardiff` | Use pool-controlled variable difficulty (overrides default 524288) |
 | `--nostats` | Disable the on-screen stats helper |
 | `--force-backend ada` | Override GPU arch auto-detection |
 | `FAILOVER_GRACE_SEC=120` | Seconds before failover check begins (default 120) |
@@ -48,7 +49,7 @@ This fork adds an enhanced HiveOS wrapper with:
 > `--gpu` is a wrapper alias that gets translated to `--devices` before being passed to the binary.  
 > You can use either — they are interchangeable.
 
-> **Note on Password / difficulty:** Use `--diff N` in Extra config to set static difficulty — it's cleaner and takes precedence over whatever is in the Password field. If you prefer the raw format, set the Password field to `x;d=262144`, `x;d=524288`, etc. Leave the Password field empty (or just `x`) to use vardiff.
+> **Note on difficulty:** The wrapper defaults to static difficulty **524288** if no `--diff` is specified and the Password field is empty or `x`. To use pool-controlled variable difficulty (vardiff), add `--vardiff` to Extra config. To set a custom static difficulty, use `--diff N` (e.g., `--diff 262144` or `--diff 524288,262144` for per-GPU values).
 
 ---
 
