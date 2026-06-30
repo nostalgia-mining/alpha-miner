@@ -154,7 +154,7 @@ process_line() {
             [[ "$line" =~ [[:space:]]difficulty=([0-9.]+) ]] && diff="${BASH_REMATCH[1]}"
             diff="${diff%.00}"
             [[ -n "$diff" ]] && GPU_DIFF[$gpu_idx]="$diff"
-            log_print "[${hhmm}] [INFO] Difficulty set: ${diff}"
+            log_print "[${hhmm}] [INFO] GPU ${gpu_idx} Difficulty set: ${diff}"
         elif [[ "$line" =~ [[:space:]]"job "[[:space:]] ]] || [[ "$line" =~ [[:space:]]job[[:space:]]id= ]]; then
             local job_id="" gen="" diff=""
             [[ "$line" =~ [[:space:]]id=([^[:space:]]+) ]]        && job_id="${BASH_REMATCH[1]}"
@@ -225,7 +225,7 @@ process_line() {
                 local _arr=($queue_str)
                 actual_len=${#_arr[@]}
             fi
-            if (( actual_len != expected_inflight )); then
+            if (( actual_len != expected_inflight && actual_len > 0 )); then
                 GPU_HIT_QUEUE[$gpu_idx]=""
                 log_print "[$(date +'%Y-%m-%d %H:%M:%S')] [DEBUG] Queue reset: gpu=$gpu_idx hits=$hits acc=$acc dropped=$dropped expected=$expected_inflight actual=$actual_len"
             fi
