@@ -12,6 +12,7 @@ This fork adds an enhanced HiveOS wrapper with:
 - ✅ `--gpu` alias for `--devices` — use either flag to select GPUs
 - ✅ Pool URL driven entirely by the HiveOS **Pool URL** field — no hardcoded endpoints
 - ✅ `--diff` to set a static difficulty (comma separated per GPU) - e.g. `--diff 524288,262144,1048576,524288`
+- ✅ `--mdl` to enable merged mining with ModelOS (MDL) — e.g. `--mdl YOUR_MDL_ADDRESS`
 - ✅ On-screen stats table (`alpha-stats.sh`) — per-GPU hashrate, watt, temp, fan, clock, shares
 - ✅ Multi-pool failover via the supervisor (comma-separate pools in the Pool URL field)
 
@@ -37,6 +38,7 @@ This fork adds an enhanced HiveOS wrapper with:
 | `--diff 524288` | Set static difficulty for all GPUs (alias for `x;d=N` in Password field) |
 | `--diff 524288,262144` | Per-GPU difficulty (comma-separated, one value per GPU) |
 | `--vardiff` | Use pool-controlled variable difficulty (overrides default 524288) |
+| `--mdl ADDRESS` | Enable merged mining with ModelOS (MDL). Appends `;mdl=ADDRESS` to password. |
 | `--nostats` | Disable the on-screen stats helper |
 | `--force-backend ada` | Override GPU arch auto-detection |
 | `FAILOVER_GRACE_SEC=120` | Seconds before failover check begins (default 120) |
@@ -50,6 +52,11 @@ This fork adds an enhanced HiveOS wrapper with:
 > You can use either — they are interchangeable.
 
 > **Note on difficulty:** The wrapper defaults to static difficulty **524288** if no `--diff` is specified and the Password field is empty or `x`. To use pool-controlled variable difficulty (vardiff), add `--vardiff` to Extra config. To set a custom static difficulty, use `--diff N` (e.g., `--diff 262144` or `--diff 524288,262144` for per-GPU values).
+
+> **Note on merged mining (MDL):** To enable merged mining with ModelOS, add `--mdl YOUR_MDL_ADDRESS` to Extra config. This appends `;mdl=ADDRESS` to the password string. Works with `--diff`, `--vardiff`, or the default difficulty. Examples:
+> - `--mdl mdl1abc...` → password becomes `x;d=524288;mdl=mdl1abc...`
+> - `--diff 262144 --mdl mdl1abc...` → `x;d=262144;mdl=mdl1abc...`
+> - `--vardiff --mdl mdl1abc...` → `x;mdl=mdl1abc...`
 
 ---
 

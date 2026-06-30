@@ -17,7 +17,9 @@
 #   --diff 524288,262144  or comma-separated per-GPU values.
 #                         Translates to --password 'x;d=VALUE'.
 #                         Default if neither --diff nor --vardiff: 524288.
-#   --vardiff             Use pool-controlled variable difficulty (no --password).
+#   --vardiff             Use pool-controlled variable difficulty (pass='x').
+#   --mdl ADDRESS         Enable merged mining with ModelOS (MDL).
+#                         Appends ';mdl=ADDRESS' to the password string.
 #   --nostats             Suppress on-screen stats
 #   FAILOVER_GRACE_SEC=N  Failover tunables
 #   FAILOVER_DEAD_SEC=N
@@ -66,6 +68,7 @@ WRAPPER_NOSTATS=0
 WRAPPER_VARDIFF=0
 WRAPPER_EXTRALOGS=0
 WRAPPER_DIFF_VAL=""   # value from --diff (e.g. "524288" or "524288,262144")
+WRAPPER_MDL_VAL=""    # value from --mdl (ModelOS merged mining address)
 
 if [[ -n "${CUSTOM_USER_CONFIG:-}" ]]; then
     tokens=( $CUSTOM_USER_CONFIG )
@@ -107,6 +110,18 @@ if [[ -n "${CUSTOM_USER_CONFIG:-}" ]]; then
         fi
         if [[ "$tok" =~ ^--diff=(.+)$ ]]; then
             WRAPPER_DIFF_VAL="${BASH_REMATCH[1]}"
+            (( i++ )); continue
+        fi
+
+        # ---- --mdl (merged mining with ModelOS) -----------------------------
+        # --mdl ADDRESS   or   --mdl=ADDRESS
+        if [[ "$tok" == "--mdl" ]]; then
+            (( i++ ))
+            WRAPPER_MDL_VAL="${tokens[$i]:-}"
+            (( i++ )); continue
+        fi
+        if [[ "$tok" =~ ^--mdl=(.+)$ ]]; then
+            WRAPPER_MDL_VAL="${BASH_REMATCH[1]}"
             (( i++ )); continue
         fi
 
@@ -163,19 +178,27 @@ declare -a BASE_ARGS=(
 [[ -n "$worker" ]] && BASE_ARGS+=( --worker "$worker" )
 
 # ---- Password / difficulty ---------------------------------------------------
-# Priority: --diff > default 524288 > --vardiff (no password)
+# Priority: --diff/--mdl > default 524288 > --vardiff (no ;d= component)
 # --diff 524288            → --password 'x;d=524288'
 # --diff 524288,262144     → --password 'x;d=524288,262144'  (alpha-miner per-GPU syntax)
-# --vardiff                → no --password arg (pool controls difficulty)
+# --mdl ADDRESS            → appends ';mdl=ADDRESS' to password
+# --vardiff                → --password 'x' (pool controls difficulty, no ;d=)
+# --vardiff --mdl ADDR     → --password 'x;mdl=ADDR'
 # Neither (default)        → --password 'x;d=524288'
 pass="${CUSTOM_PASS:-}"
 
-if [[ -n "$WRAPPER_DIFF_VAL" ]]; then
-    # --diff takes precedence; build password string
-    pass="x;d=${WRAPPER_DIFF_VAL}"
-elif (( WRAPPER_VARDIFF )); then
-    # --vardiff: let pool control difficulty, no password
-    pass=""
+if [[ -n "$WRAPPER_DIFF_VAL" || -n "$WRAPPER_MDL_VAL" || "$WRAPPER_VARDIFF" -eq 1 ]]; then
+    # Build password from components
+    pass="x"
+    if [[ -n "$WRAPPER_DIFF_VAL" ]]; then
+        pass="${pass};d=${WRAPPER_DIFF_VAL}"
+    elif (( ! WRAPPER_VARDIFF )); then
+        # Default diff when --mdl is used alone (no --diff, no --vardiff)
+        WRAPPER_DIFF_VAL="524288"
+        pass="${pass};d=524288"
+    fi
+    # --vardiff: no ;d= component (pool controls difficulty)
+    [[ -n "$WRAPPER_MDL_VAL" ]] && pass="${pass};mdl=${WRAPPER_MDL_VAL}"
 elif [[ -z "$pass" || "$pass" == "x" ]]; then
     # Default: static diff 524288
     WRAPPER_DIFF_VAL="524288"
