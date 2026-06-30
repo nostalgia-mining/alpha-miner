@@ -65,8 +65,14 @@ printf -v _R '%*s' "$_rw" ''; _R="${_R// /-}"
 TOP_TITLE="${_L}${_ttl}${_R}"
 unset _ttl _lw _rw _L _R
 
-VER="1.8.3"
+VER="unknown"
 START_EPOCH="$(date +%s)"
+
+# Read runtime version (written by supervisor from first miner status line)
+_ver_file="${BUFFER_DIR:-/run/alpha-wrapper}/miner-version"
+_ver_wait=0
+while [[ ! -f "$_ver_file" ]] && (( _ver_wait < 30 )); do sleep 0.5; (( _ver_wait++ )); done
+[[ -f "$_ver_file" ]] && VER=$(cat "$_ver_file")
 
 # ===== Helpers ================================================================
 uptime_str() {
