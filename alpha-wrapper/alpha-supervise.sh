@@ -107,9 +107,18 @@ start_buffer_writer() {
         local hc=7  # 7 lines already in head file from banner above
         local prev_hits=-1  # track hits to detect changes
         local prev_dropped=0  # track dropped to detect changes
+        local ver_detected=0  # flag: have we captured miner version yet?
 
         while IFS= read -r line; do
             printf '%s\n' "$line" >> "$BUFFER_FILE"
+
+            # ---- Version detection: grab ver= from first status line ----
+            if (( ver_detected == 0 )) && [[ "$line" == *"component=miner status"* ]]; then
+                if [[ "$line" =~ [[:space:]]ver=([^[:space:]]+) ]]; then
+                    echo "${BASH_REMATCH[1]}" > "$BUFFER_DIR/miner-version"
+                    ver_detected=1
+                fi
+            fi
 
             # ---- Sidecar: write meaningful events only ----
             # Include: component=pool, component=share, miner errors,

@@ -134,6 +134,12 @@ find "$STAGE_DIR/alpha-wrapper" -name "*.sh" -o -name "*.conf" | while read -r f
 done
 echo "Done."
 
+# ---- Inject version into h-manifest.conf ------------------------------------
+echo ""
+echo "Injecting version $VERSION into h-manifest.conf..."
+sed -i "s/^CUSTOM_VERSION=.*/CUSTOM_VERSION=${VERSION}/" "$STAGE_DIR/alpha-wrapper/h-manifest.conf"
+echo "  CUSTOM_VERSION=${VERSION}"
+
 # ---- Set execute permissions -------------------------------------------------
 echo ""
 echo "Setting permissions..."

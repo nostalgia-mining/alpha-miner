@@ -6,6 +6,10 @@
 # contains only meaningful events (pool, share, hit changes). This file
 # NEVER gets trimmed, so no lines are ever lost — eliminating ping desync.
 #
+# Dual-mode ping measurement:
+#   v1.8.3: push to queue on status line `hits` increment (prints every attempt)
+#   v1.8.5: push to queue on `component=share found_candidate` line (exact hit timestamp)
+#
 # Env vars:
 #   BUFFER_FILE   /run/alpha-wrapper/miner-raw.buf (for counter init only)
 #   EVENTS_FILE   /run/alpha-wrapper/events.log (sidecar — never trimmed)
@@ -15,10 +19,35 @@ set -u
 BUFFER_FILE="${BUFFER_FILE:-/run/alpha-wrapper/miner-raw.buf}"
 EVENTS_FILE="${EVENTS_FILE:-/run/alpha-wrapper/events.log}"
 GPU_LIST="${GPU_LIST:-0}"
+BUFFER_DIR="${BUFFER_DIR:-/run/alpha-wrapper}"
 
 # Helper: print to stdout only (h-run.sh tee handles the log file)
 log_print() {
     printf '%s\n' "$1"
+}
+
+# ===== Version detection ======================================================
+# Wait for supervisor to detect version from miner output
+MINER_VERSION=""
+PING_MODE="status"  # "status" = v1.8.3 (push on hits increment), "candidate" = v1.8.5+
+
+detect_version() {
+    local ver_file="$BUFFER_DIR/miner-version"
+    local wait_count=0
+    while [[ ! -f "$ver_file" ]] && (( wait_count < 60 )); do
+        sleep 0.5
+        (( wait_count++ ))
+    done
+    if [[ -f "$ver_file" ]]; then
+        MINER_VERSION=$(cat "$ver_file")
+        # v1.8.5+ has found_candidate lines — use them for precise ping
+        local major minor patch
+        IFS='.' read -r major minor patch <<< "$MINER_VERSION"
+        if (( major > 1 )) || (( major == 1 && minor > 8 )) || (( major == 1 && minor == 8 && patch >= 5 )); then
+            PING_MODE="candidate"
+        fi
+    fi
+    log_print "[$(date +'%Y-%m-%d %H:%M:%S')] [INFO] Miner version: ${MINER_VERSION:-unknown} — ping mode: $PING_MODE"
 }
 
 # ===== State per GPU ==========================================================
@@ -31,6 +60,7 @@ declare -A GPU_HIT_QUEUE=()  # Queue of hit timestamps per GPU (space-separated)
 declare -A GPU_DIFF=()
 LAST_JOB_ID=""
 LAST_POOL_HOST=""
+POOL_RECONNECTING=0  # flag: suppress "connected" prints during reconnect attempts
 
 # ===== Timestamp -> milliseconds ==============================================
 ts_to_ms() {
@@ -59,6 +89,7 @@ init_from_buffer() {
 
 # ===== Wait for sidecar to exist ==============================================
 while [[ ! -f "$EVENTS_FILE" ]]; do sleep 0.5; done
+detect_version
 init_from_buffer
 
 # ===== Main read loop =========================================================
@@ -96,18 +127,25 @@ process_line() {
                 GPU_HIT_QUEUE[$gpu_idx]="$queue"
             fi
             log_print "[${hhmm}] [WARN] Share dropped (pool reconnect)"
+        elif [[ "$line" =~ "connection_lost" ]]; then
+            POOL_RECONNECTING=1
+            log_print "[${hhmm}] [WARN] Pool connection lost — reconnecting"
+        elif [[ "$line" =~ "reconnect_failed" ]]; then
+            local failures=""
+            [[ "$line" =~ [[:space:]]failures=([0-9]+) ]] && failures="${BASH_REMATCH[1]}"
+            log_print "[${hhmm}] [WARN] Reconnect failed (attempt ${failures:-?})"
+        elif [[ "$line" =~ "challenge_solved" ]]; then
+            local solve_sec=""
+            [[ "$line" =~ [[:space:]]seconds=([0-9.]+) ]] && solve_sec="${BASH_REMATCH[1]}"
+            POOL_RECONNECTING=0
+            log_print "[${hhmm}] [INFO] Pool connected: ${LAST_POOL_HOST}"
+            log_print "[${hhmm}] [INFO] Challenge solved (${solve_sec:-?}s)"
         elif [[ "$line" =~ [[:space:]]connected[[:space:]] && "$line" =~ host= ]]; then
             local host="" port=""
             [[ "$line" =~ [[:space:]]host=([^[:space:]]+) ]] && host="${BASH_REMATCH[1]}"
             [[ "$line" =~ [[:space:]]port=([^[:space:]]+) ]] && port="${BASH_REMATCH[1]}"
-            local cur_pool="${host}:${port}"
-            if [[ -n "$LAST_POOL_HOST" && "$LAST_POOL_HOST" != "$cur_pool" ]]; then
-                log_print "[${hhmm}] ===== POOL FAILOVER: ${LAST_POOL_HOST} -> ${cur_pool} ====="
-            elif [[ -n "$LAST_POOL_HOST" ]]; then
-                log_print "[${hhmm}] ===== POOL RECONNECT: ${cur_pool} ====="
-            fi
-            LAST_POOL_HOST="$cur_pool"
-            log_print "[${hhmm}] [INFO] Pool connected: ${cur_pool}"
+            LAST_POOL_HOST="${host}:${port}"
+            # Don't print "Pool connected" here — wait for challenge_solved to confirm
         elif [[ "$line" =~ "disconnected" ]]; then
             log_print "[${hhmm}] [INFO] Pool disconnected"
         elif [[ "$line" =~ "difficulty_set" ]]; then
@@ -132,6 +170,13 @@ process_line() {
             fi
         fi
 
+    elif [[ "$component" == "share" ]] && [[ "$line" =~ "found_candidate" ]]; then
+        # v1.8.5+ candidate detection — push hit timestamp to queue
+        if [[ "$PING_MODE" == "candidate" ]]; then
+            local hit_ts_ms; hit_ts_ms="$(ts_to_ms "$ts")"
+            GPU_HIT_QUEUE[$gpu_idx]="${GPU_HIT_QUEUE[$gpu_idx]:-} $hit_ts_ms"
+        fi
+
     elif [[ "$component" == "miner" ]] && [[ "$line" =~ [[:space:]]"status"[[:space:]] ]]; then
         local hits=0 acc=0 dropped=0
         [[ "$line" =~ [[:space:]]hits=([0-9]+) ]] && hits="${BASH_REMATCH[1]}"
@@ -142,7 +187,9 @@ process_line() {
         local prev_dropped="${LAST_DROPPED_COUNT[$gpu_idx]:-0}"
 
         # Only queue a hit timestamp on exactly +1 increment (ignore duplicates/jumps)
-        if (( hits == prev_hits + 1 )); then
+        # v1.8.3 mode: status line IS the hit signal (prints every attempt)
+        # v1.8.5 mode: found_candidate handles this — skip here
+        if [[ "$PING_MODE" == "status" ]] && (( hits == prev_hits + 1 )); then
             local hit_ts_ms; hit_ts_ms="$(ts_to_ms "$ts")"
             GPU_HIT_QUEUE[$gpu_idx]="${GPU_HIT_QUEUE[$gpu_idx]:-} $hit_ts_ms"
         fi
@@ -183,7 +230,7 @@ process_line() {
             fi
         fi
 
-    elif [[ "$component" == "share" ]] && [[ "$line" =~ "accepted" ]]; then
+    elif [[ "$component" == "share" ]] && [[ "$line" =~ "accepted" ]] && [[ ! "$line" =~ "found_candidate" ]]; then
         local hhmm; hhmm="$(date +'%Y-%m-%d %H:%M:%S')"
         local job_id=""
         [[ "$line" =~ [[:space:]]job=([^[:space:]]+) ]] && job_id="${BASH_REMATCH[1]}"
@@ -212,11 +259,11 @@ process_line() {
         local ping_str="n/a"
         (( ping_ms > 0 )) && ping_str="${ping_ms} ms"
         local _line
-        printf -v _line "[%s] GPU %-2s Share accepted %-10s diff=%-8s job=%-10s [%s/%s]" \
-            "$hhmm" "$gpu_idx" "(${ping_str})" "$diff" "$short_job" "$local_acc" "$local_rej"
+        printf -v _line "[%s] GPU %-2s %-25s diff=%-8s job=%-10s [%s/%s]" \
+            "$hhmm" "$gpu_idx" "Share accepted (${ping_str})" "$diff" "$short_job" "$local_acc" "$local_rej"
         log_print "$_line"
 
-    elif [[ "$component" == "share" ]] && [[ "$line" =~ "rejected" || "$line" =~ "dropped" ]]; then
+    elif [[ "$component" == "share" ]] && [[ "$line" =~ "rejected" || "$line" =~ "dropped" ]] && [[ ! "$line" =~ "found_candidate" ]]; then
         local hhmm; hhmm="$(date +'%Y-%m-%d %H:%M:%S')"
         # Pop from hit queue to keep it in sync (same as accepted, but no ping)
         if [[ -n "${GPU_HIT_QUEUE[$gpu_idx]:-}" ]]; then
@@ -231,11 +278,14 @@ process_line() {
         local_acc="${DISPLAY_ACC[$gpu_idx]:-0}"
         local_rej="${DISPLAY_REJ[$gpu_idx]}"
         local diff="${GPU_DIFF[$gpu_idx]:-?}"
+        local job_id=""
+        [[ "$line" =~ [[:space:]]job=([^[:space:]]+) ]] && job_id="${BASH_REMATCH[1]}"
+        local short_job="${job_id:0:8}"
         local label="REJECTED"
         [[ "$line" =~ "dropped" ]] && label="DROPPED"
         local _line
-        printf -v _line "[%s] GPU %-2s Share %-12s diff=%-8s [%s/%s]" \
-            "$hhmm" "$gpu_idx" "$label" "$diff" "$local_acc" "$local_rej"
+        printf -v _line "[%s] GPU %-2s %-25s diff=%-8s job=%-10s [%s/%s]" \
+            "$hhmm" "$gpu_idx" "Share $label" "$diff" "$short_job" "$local_acc" "$local_rej"
         log_print "$_line"
     fi
 }
