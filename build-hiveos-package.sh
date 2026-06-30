@@ -232,15 +232,23 @@ deploy_local() {
     echo ""
     echo "Deploying locally to $HIVE_MINER_DIR ..."
 
-    # Remove old cached download so HiveOS doesn't use stale version
-    local HIVE_DOWNLOAD="/hive/miners/custom/downloads/alpha-wrapper-V${VERSION}.tar.gz"
-    [[ -f "$HIVE_DOWNLOAD" ]] && rm -f "$HIVE_DOWNLOAD" && echo "  Removed cached download: $HIVE_DOWNLOAD"
-
-    # Extract tarball directly to the custom miner location
-    rm -rf "$HIVE_MINER_DIR"
+    # Copy files directly from staging dir (already has correct permissions + LF)
+    # Don't touch /hive/miners/custom/downloads/ — if HiveOS doesn't find the
+    # tar there it will force a re-download from GitHub on next restart.
     mkdir -p "$HIVE_MINER_DIR"
-    tar -xzf "$OUTPUT" -C "/hive/miners/custom/"
-    echo "  Extracted to: $HIVE_MINER_DIR"
+
+    # Copy each wrapper file individually (preserves permissions from staging)
+    cp -f "$STAGE_DIR/alpha-wrapper/alpha"              "$HIVE_MINER_DIR/"
+    cp -f "$STAGE_DIR/alpha-wrapper/h-manifest.conf"    "$HIVE_MINER_DIR/"
+    cp -f "$STAGE_DIR/alpha-wrapper/h-config.sh"        "$HIVE_MINER_DIR/"
+    cp -f "$STAGE_DIR/alpha-wrapper/h-run.sh"           "$HIVE_MINER_DIR/"
+    cp -f "$STAGE_DIR/alpha-wrapper/h-stats.sh"         "$HIVE_MINER_DIR/"
+    cp -f "$STAGE_DIR/alpha-wrapper/alpha-supervise.sh" "$HIVE_MINER_DIR/"
+    cp -f "$STAGE_DIR/alpha-wrapper/alpha-stats.sh"     "$HIVE_MINER_DIR/"
+    cp -f "$STAGE_DIR/alpha-wrapper/alpha-events.sh"    "$HIVE_MINER_DIR/"
+    cp -f "$STAGE_DIR/alpha-wrapper/miner.conf"         "$HIVE_MINER_DIR/"
+
+    echo "  Copied all files to: $HIVE_MINER_DIR"
     echo ""
     echo "  Local deploy complete. Restart miner to use the new version:"
     echo "    miner restart"
