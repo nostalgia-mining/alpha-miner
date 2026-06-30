@@ -58,6 +58,7 @@ declare -A LAST_DROPPED_COUNT=()
 declare -A DISPLAY_ACC=()   # Our own accepted counter (incremented on share accepted event)
 declare -A DISPLAY_REJ=()   # Our own rejected counter (incremented on share rejected/dropped event)
 declare -A GPU_HIT_QUEUE=()  # Queue of hit timestamps per GPU (space-separated)
+declare -A GPU_GHOST_HITS=() # Hits counted by miner but never seen as found_candidate (obsolete_job)
 declare -A GPU_DIFF=()
 LAST_JOB_ID=""
 LAST_POOL_HOST=""
@@ -217,7 +218,8 @@ process_line() {
         # When hits just incremented, the accepted counter hasn't caught up yet
         # so the expected in-flight would be artificially high.
         if (( hits == prev_hits )); then
-            local expected_inflight=$(( hits - acc - dropped ))
+            local ghost="${GPU_GHOST_HITS[$gpu_idx]:-0}"
+            local expected_inflight=$(( hits - acc - dropped - ghost ))
             (( expected_inflight < 0 )) && expected_inflight=0
             local queue_str="${GPU_HIT_QUEUE[$gpu_idx]:-}"
             local actual_len=0
@@ -271,18 +273,33 @@ process_line() {
 
     elif [[ "$component" == "share" ]] && [[ "$line" =~ "rejected" || "$line" =~ "dropped" ]] && [[ ! "$line" =~ "component=share found_candidate" ]]; then
         local hhmm; hhmm="$(date +'%Y-%m-%d %H:%M:%S')"
-        # Pop from hit queue to keep it in sync (same as accepted, but no ping)
-        if [[ -n "${GPU_HIT_QUEUE[$gpu_idx]:-}" ]]; then
-            local queue="${GPU_HIT_QUEUE[$gpu_idx]}"
-            local _discard
-            read -r _discard queue <<< "$queue"
-            GPU_HIT_QUEUE[$gpu_idx]="$queue"
-        fi
 
-        # Only display rejected/dropped if it's an actual pool rejection (not internal obsolete_job)
         if [[ "$line" =~ "reason=obsolete_job" ]]; then
-            : # silent — miner dropped it internally before submission, no user-facing event
+            # Internal drop: miner found candidate but job became stale before submission.
+            # hits increments but dropped counter does NOT. Track as ghost hit.
+            if [[ -n "${GPU_HIT_QUEUE[$gpu_idx]:-}" ]]; then
+                # We saw the found_candidate and pushed — pop it
+                local queue="${GPU_HIT_QUEUE[$gpu_idx]}"
+                local _discard
+                read -r _discard queue <<< "$queue"
+                GPU_HIT_QUEUE[$gpu_idx]="$queue"
+            else
+                # We never saw found_candidate for this hit — track as ghost
+                GPU_GHOST_HITS[$gpu_idx]=$(( ${GPU_GHOST_HITS[$gpu_idx]:-0} + 1 ))
+            fi
+            if (( WRAPPER_DETAIL )); then
+                printf -v _line "[%s] GPU %-2s Share dropped (stale)" "$hhmm" "$gpu_idx"
+                log_print "$_line"
+            fi
         else
+            # Real pool rejection — pop from queue
+            if [[ -n "${GPU_HIT_QUEUE[$gpu_idx]:-}" ]]; then
+                local queue="${GPU_HIT_QUEUE[$gpu_idx]}"
+                local _discard
+                read -r _discard queue <<< "$queue"
+                GPU_HIT_QUEUE[$gpu_idx]="$queue"
+            fi
+
             local local_acc local_rej
             DISPLAY_REJ[$gpu_idx]=$(( ${DISPLAY_REJ[$gpu_idx]:-0} + 1 ))
             local_acc="${DISPLAY_ACC[$gpu_idx]:-0}"
