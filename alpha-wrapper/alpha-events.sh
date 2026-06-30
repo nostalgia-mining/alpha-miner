@@ -277,15 +277,13 @@ process_line() {
         if [[ "$line" =~ "reason=obsolete_job" ]]; then
             # Internal drop: miner found candidate but job became stale before submission.
             # hits increments but dropped counter does NOT. Track as ghost hit.
+            GPU_GHOST_HITS[$gpu_idx]=$(( ${GPU_GHOST_HITS[$gpu_idx]:-0} + 1 ))
+            # Pop from queue if we saw the found_candidate for this hit
             if [[ -n "${GPU_HIT_QUEUE[$gpu_idx]:-}" ]]; then
-                # We saw the found_candidate and pushed — pop it
                 local queue="${GPU_HIT_QUEUE[$gpu_idx]}"
                 local _discard
                 read -r _discard queue <<< "$queue"
                 GPU_HIT_QUEUE[$gpu_idx]="$queue"
-            else
-                # We never saw found_candidate for this hit — track as ghost
-                GPU_GHOST_HITS[$gpu_idx]=$(( ${GPU_GHOST_HITS[$gpu_idx]:-0} + 1 ))
             fi
             if (( WRAPPER_DETAIL )); then
                 printf -v _line "[%s] GPU %-2s Share dropped (stale)" "$hhmm" "$gpu_idx"
