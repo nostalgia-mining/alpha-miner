@@ -11,6 +11,7 @@ NOCKminer/**
 # distributed via GitHub Releases, not committed to the repo)
 alpha/alpha
 alpha-miner
+builds/
 
 # Packaging artifacts
 *.tar.gz

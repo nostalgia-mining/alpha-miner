@@ -5,14 +5,20 @@
 # Run this on Linux (Ubuntu / HiveOS rig) to produce the HiveOS-installable
 # tarball with correct Unix permissions and LF line endings.
 #
+# Binaries and outputs are stored per-version in builds/{VERSION}/ so you
+# can maintain multiple versions side by side without re-downloading.
+#
 # Usage:
 #   bash build-hiveos-package.sh              # builds with default version (1.8.3)
 #   bash build-hiveos-package.sh 1.8.5        # builds with specified version (auto-detect URL)
 #   bash build-hiveos-package.sh 1.8.5 https://pearl.alphapool.tech/downloads/alpha-miner-1.8.5
 #                                             # builds with explicit binary URL
 #
-# Output:
-#   alpha-wrapper-V{VERSION}.tar.gz
+# After build, you choose:
+#   [L] Deploy locally to /hive/miners/custom/alpha-wrapper (test on this rig)
+#   [G] Upload to GitHub release (publish for all rigs)
+#   [B] Both
+#   [N] Neither (just build)
 
 set -euo pipefail
 
@@ -20,12 +26,15 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 WRAPPER_DIR="$SCRIPT_DIR/alpha-wrapper"
 VERSION="${1:-1.8.3}"
 BINARY_URL="${2:-}"
-BINARY_DEST="$WRAPPER_DIR/alpha"      # HiveOS expects the binary named 'alpha'
-OUTPUT="$SCRIPT_DIR/alpha-wrapper-V${VERSION}.tar.gz"
+
+# ---- Version-specific build directory ----------------------------------------
+BUILD_DIR="$SCRIPT_DIR/builds/$VERSION"
+mkdir -p "$BUILD_DIR"
+BINARY_DEST="$BUILD_DIR/alpha"
+OUTPUT="$BUILD_DIR/alpha-wrapper-V${VERSION}.tar.gz"
 
 # If no explicit URL, try sources in order
 if [[ -z "$BINARY_URL" ]]; then
-    # Try GitHub release first, then alphapool.tech
     BINARY_URL_GITHUB="https://github.com/AlphaMine-Tech/alpha-miner/releases/download/v${VERSION}/alpha-miner"
     BINARY_URL_ALPHAPOOL="https://pearl.alphapool.tech/downloads/alpha-miner-${VERSION}"
 fi
@@ -38,6 +47,7 @@ declare -A KNOWN_SHA256=(
 echo "================================================"
 echo " AlphaMiner PEARL — HiveOS package builder"
 echo " Version : $VERSION"
+echo " Build   : $BUILD_DIR"
 echo " Output  : $OUTPUT"
 echo "================================================"
 echo ""
@@ -119,8 +129,6 @@ fi
 echo "Clean."
 
 # ---- Fix CRLF line endings in a temp staging directory ----------------------
-# We work on copies so the git working tree stays clean (no 'modified' files
-# after the build, which would block the next git pull).
 echo ""
 echo "Staging files with LF line endings..."
 STAGE_DIR="$(mktemp -d)"
@@ -157,7 +165,6 @@ echo ""
 echo "Building tarball..."
 cd "$STAGE_DIR"
 
-# List all files that will be included
 WRAPPER_FILES=(
     alpha-wrapper/alpha
     alpha-wrapper/h-manifest.conf
@@ -180,7 +187,6 @@ for f in "${WRAPPER_FILES[@]}"; do
     echo "  ok: $f"
 done
 
-# -p preserves permissions; --owner=0 --group=0 avoids embedding local uid/gid
 tar -czpf "$OUTPUT" \
     --owner=0 --group=0 \
     "${WRAPPER_FILES[@]}"
@@ -201,186 +207,191 @@ tar -tzvf "$OUTPUT"
 echo ""
 PACKAGE_SHA=$(sha256sum "$OUTPUT" | awk '{print $1}')
 echo "Package SHA256: $PACKAGE_SHA"
-echo "$PACKAGE_SHA  alpha-wrapper-V${VERSION}.tar.gz" > "$SCRIPT_DIR/alpha-wrapper-V${VERSION}.sha256"
-echo "Checksum saved to: alpha-wrapper-V${VERSION}.sha256"
+echo "$PACKAGE_SHA  alpha-wrapper-V${VERSION}.tar.gz" > "$BUILD_DIR/alpha-wrapper-V${VERSION}.sha256"
+echo "Checksum saved to: builds/${VERSION}/alpha-wrapper-V${VERSION}.sha256"
 
-# ---- Next steps --------------------------------------------------------------
+# ==============================================================================
+# ---- Deploy menu -------------------------------------------------------------
+# ==============================================================================
 echo ""
 echo "================================================"
-echo " GitHub Release"
+echo " Deploy"
 echo "================================================"
 echo ""
-echo "Upload the package to GitHub Releases using the API."
-echo "You need a GitHub Personal Access Token with 'repo' scope."
-echo "(Create one at: https://github.com/settings/tokens)"
+echo "  [L] Deploy locally — copy to /hive/miners/custom/alpha-wrapper (test on this rig)"
+echo "  [G] Upload to GitHub release (publish for all rigs)"
+echo "  [B] Both"
+echo "  [N] Neither (just build, done)"
 echo ""
+read -rp "Choose [L/G/B/N]: " DEPLOY_CHOICE
+DEPLOY_CHOICE="${DEPLOY_CHOICE,,}"  # lowercase
 
-# Try to load saved token
-TOKEN_FILE="$HOME/.alpha-wrapper-gh-token"
-GH_TOKEN=""
-if [[ -f "$TOKEN_FILE" ]]; then
-    GH_TOKEN=$(cat "$TOKEN_FILE")
-    echo "Using saved token from $TOKEN_FILE"
-fi
-
-if [[ -z "$GH_TOKEN" ]]; then
-    read -rsp "GitHub Token (input hidden): " GH_TOKEN
+# ---- Local deploy ------------------------------------------------------------
+deploy_local() {
+    local HIVE_MINER_DIR="/hive/miners/custom/alpha-wrapper"
     echo ""
-    if [[ -n "$GH_TOKEN" ]]; then
-        read -rp "Save token for future builds? [y/N]: " SAVE_TOKEN
-        if [[ "${SAVE_TOKEN,,}" == "y" ]]; then
-            echo "$GH_TOKEN" > "$TOKEN_FILE"
-            chmod 600 "$TOKEN_FILE"
-            echo "Token saved to $TOKEN_FILE"
-        fi
-    fi
-fi
+    echo "Deploying locally to $HIVE_MINER_DIR ..."
 
-if [[ -z "$GH_TOKEN" ]]; then
-    echo "No token provided — skipping GitHub upload."
+    # Remove old cached download so HiveOS doesn't use stale version
+    local HIVE_DOWNLOAD="/hive/miners/custom/downloads/alpha-wrapper-V${VERSION}.tar.gz"
+    [[ -f "$HIVE_DOWNLOAD" ]] && rm -f "$HIVE_DOWNLOAD" && echo "  Removed cached download: $HIVE_DOWNLOAD"
+
+    # Extract tarball directly to the custom miner location
+    rm -rf "$HIVE_MINER_DIR"
+    mkdir -p "$HIVE_MINER_DIR"
+    tar -xzf "$OUTPUT" -C "/hive/miners/custom/"
+    echo "  Extracted to: $HIVE_MINER_DIR"
     echo ""
-    echo "Manual steps:"
-    echo "  1. Go to: https://github.com/nostalgia-mining/alpha-miner/releases/new"
-    echo "  2. Tag: v${VERSION}-hiveos"
-    echo "  3. Upload: $OUTPUT"
-    echo "  4. Upload: alpha-wrapper-V${VERSION}.sha256"
+    echo "  Local deploy complete. Restart miner to use the new version:"
+    echo "    miner restart"
     echo ""
-    exit 0
-fi
-
-REPO="nostalgia-mining/alpha-miner"
-TAG="v${VERSION}-hiveos"
-RELEASE_TITLE="HiveOS wrapper v${VERSION}"
-RELEASE_NOTES="HiveOS wrapper v${VERSION} — see README for flight sheet setup."
-
-echo ""
-echo "Creating GitHub Release ${TAG}..."
-
-# Check if release already exists
-EXISTING=$(curl -s \
-    -H "Authorization: token $GH_TOKEN" \
-    -H "Accept: application/vnd.github+json" \
-    "https://api.github.com/repos/${REPO}/releases/tags/${TAG}" 2>/dev/null \
-    | grep '"id"' | head -1 | grep -oE '[0-9]+' || true)
-
-if [[ -n "$EXISTING" ]]; then
-    echo "Release ${TAG} already exists (id=${EXISTING}) — will upload assets to it."
-    RELEASE_ID="$EXISTING"
-else
-    # Create the release
-    RESPONSE=$(curl -s \
-        -H "Authorization: token $GH_TOKEN" \
-        -H "Accept: application/vnd.github+json" \
-        -H "Content-Type: application/json" \
-        -X POST \
-        "https://api.github.com/repos/${REPO}/releases" \
-        -d "{
-            \"tag_name\": \"${TAG}\",
-            \"name\": \"${RELEASE_TITLE}\",
-            \"body\": \"${RELEASE_NOTES}\",
-            \"draft\": false,
-            \"prerelease\": false
-        }" 2>/dev/null)
-
-    RELEASE_ID=$(echo "$RESPONSE" | grep '"id"' | head -1 | grep -oE '[0-9]+')
-
-    if [[ -z "$RELEASE_ID" ]]; then
-        echo "ERROR: Failed to create release. Response:"
-        echo "$RESPONSE"
-        exit 1
-    fi
-    echo "Release created (id=${RELEASE_ID})"
-fi
-
-# Upload assets
-upload_asset() {
-    local filepath="$1"
-    local filename; filename=$(basename "$filepath")
-    echo ""
-    echo "Uploading ${filename}..."
-
-    # List existing assets on this release
-    local assets_json
-    assets_json=$(curl -s \
-        -H "Authorization: token $GH_TOKEN" \
-        -H "Accept: application/vnd.github+json" \
-        "https://api.github.com/repos/${REPO}/releases/${RELEASE_ID}/assets")
-
-    # Delete existing asset with the same name if it exists
-    local existing_id
-    existing_id=$(echo "$assets_json" \
-        | grep -B2 "\"name\": \"${filename}\"" \
-        | grep '"id":' | grep -oE '[0-9]+' | head -1 || true)
-
-    if [[ -n "$existing_id" ]]; then
-        echo "  Removing existing asset (id=${existing_id})..."
-        local del_http
-        del_http=$(curl -s -o /dev/null -w "%{http_code}" \
-            -H "Authorization: token $GH_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            -X DELETE \
-            "https://api.github.com/repos/${REPO}/releases/assets/${existing_id}")
-        echo "  Delete response: HTTP $del_http"
-    fi
-
-    echo "  Sending to GitHub upload API..."
-    local upload_response http_code
-    upload_response=$(curl -s -w "\nHTTP_CODE:%{http_code}" \
-        -H "Authorization: token $GH_TOKEN" \
-        -H "Accept: application/vnd.github+json" \
-        -H "Content-Type: application/octet-stream" \
-        -X POST \
-        "https://uploads.github.com/repos/${REPO}/releases/${RELEASE_ID}/assets?name=${filename}" \
-        --data-binary "@${filepath}")
-
-    http_code=$(echo "$upload_response" | grep "HTTP_CODE:" | grep -oE '[0-9]+')
-    upload_response=$(echo "$upload_response" | grep -v "HTTP_CODE:")
-
-    echo "  HTTP status: $http_code"
-
-    local url
-    url=$(echo "$upload_response" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('browser_download_url',''))" 2>/dev/null)
-    if [[ -z "$url" ]]; then
-        # fallback: grep for the specific field
-        url=$(echo "$upload_response" | grep -o '"browser_download_url":"[^"]*"' | cut -d'"' -f4)
-    fi
-    if [[ -n "$url" ]]; then
-        echo "  Uploaded: $url"
-    else
-        echo "  ERROR: Upload failed. Full response:"
-        echo "$upload_response"
-        exit 1
-    fi
 }
 
-upload_asset "$OUTPUT"
-upload_asset "$SCRIPT_DIR/alpha-wrapper-V${VERSION}.sha256"
+# ---- GitHub upload -----------------------------------------------------------
+deploy_github() {
+    echo ""
+    echo "Uploading to GitHub release..."
 
-echo ""
-echo "================================================"
-echo " Done!"
-echo "================================================"
-echo ""
-echo "HiveOS Flight Sheet — Installation URL:"
-echo "  https://github.com/${REPO}/releases/download/${TAG}/alpha-wrapper-V${VERSION}.tar.gz"
-echo ""
-
-# ---- Clean HiveOS cached installation so it re-downloads on next start ------
-echo "Cleaning HiveOS cached installation..."
-HIVE_MINER_DIR="/hive/miners/custom/alpha-wrapper"
-HIVE_DOWNLOAD="/hive/miners/custom/downloads/alpha-wrapper-V${VERSION}.tar.gz"
-
-if [[ -f "$HIVE_DOWNLOAD" ]]; then
-    rm -f "$HIVE_DOWNLOAD"
-    echo "  Removed: $HIVE_DOWNLOAD"
-    if [[ -d "$HIVE_MINER_DIR" ]]; then
-        rm -rf "$HIVE_MINER_DIR"
-        echo "  Removed: $HIVE_MINER_DIR"
+    # Try to load saved token
+    local TOKEN_FILE="$HOME/.alpha-wrapper-gh-token"
+    local GH_TOKEN=""
+    if [[ -f "$TOKEN_FILE" ]]; then
+        GH_TOKEN=$(cat "$TOKEN_FILE")
+        echo "Using saved token from $TOKEN_FILE"
     fi
-else
-    echo "  No cached download found — skipping cleanup."
-fi
+
+    if [[ -z "$GH_TOKEN" ]]; then
+        read -rsp "GitHub Token (input hidden): " GH_TOKEN
+        echo ""
+        if [[ -n "$GH_TOKEN" ]]; then
+            read -rp "Save token for future builds? [y/N]: " SAVE_TOKEN
+            if [[ "${SAVE_TOKEN,,}" == "y" ]]; then
+                echo "$GH_TOKEN" > "$TOKEN_FILE"
+                chmod 600 "$TOKEN_FILE"
+                echo "Token saved to $TOKEN_FILE"
+            fi
+        fi
+    fi
+
+    if [[ -z "$GH_TOKEN" ]]; then
+        echo "No token provided — skipping GitHub upload."
+        return
+    fi
+
+    local REPO="nostalgia-mining/alpha-miner"
+    local TAG="v${VERSION}-hiveos"
+    local RELEASE_TITLE="HiveOS wrapper v${VERSION}"
+    local RELEASE_NOTES="HiveOS wrapper v${VERSION} — see README for flight sheet setup."
+
+    echo ""
+    echo "Creating/updating GitHub Release ${TAG}..."
+
+    # Check if release already exists
+    local EXISTING
+    EXISTING=$(curl -s \
+        -H "Authorization: token $GH_TOKEN" \
+        -H "Accept: application/vnd.github+json" \
+        "https://api.github.com/repos/${REPO}/releases/tags/${TAG}" 2>/dev/null \
+        | grep '"id"' | head -1 | grep -oE '[0-9]+' || true)
+
+    local RELEASE_ID
+    if [[ -n "$EXISTING" ]]; then
+        echo "Release ${TAG} already exists (id=${EXISTING}) — will upload assets to it."
+        RELEASE_ID="$EXISTING"
+    else
+        local RESPONSE
+        RESPONSE=$(curl -s \
+            -H "Authorization: token $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "Content-Type: application/json" \
+            -X POST \
+            "https://api.github.com/repos/${REPO}/releases" \
+            -d "{
+                \"tag_name\": \"${TAG}\",
+                \"name\": \"${RELEASE_TITLE}\",
+                \"body\": \"${RELEASE_NOTES}\",
+                \"draft\": false,
+                \"prerelease\": false
+            }" 2>/dev/null)
+
+        RELEASE_ID=$(echo "$RESPONSE" | grep '"id"' | head -1 | grep -oE '[0-9]+')
+
+        if [[ -z "$RELEASE_ID" ]]; then
+            echo "ERROR: Failed to create release. Response:"
+            echo "$RESPONSE"
+            return
+        fi
+        echo "Release created (id=${RELEASE_ID})"
+    fi
+
+    # Upload asset helper
+    upload_asset() {
+        local filepath="$1"
+        local filename; filename=$(basename "$filepath")
+        echo ""
+        echo "Uploading ${filename}..."
+
+        # Delete existing asset with same name
+        local assets_json
+        assets_json=$(curl -s \
+            -H "Authorization: token $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${REPO}/releases/${RELEASE_ID}/assets")
+
+        local existing_id
+        existing_id=$(echo "$assets_json" \
+            | grep -B2 "\"name\": \"${filename}\"" \
+            | grep '"id":' | grep -oE '[0-9]+' | head -1 || true)
+
+        if [[ -n "$existing_id" ]]; then
+            echo "  Removing existing asset (id=${existing_id})..."
+            curl -s -o /dev/null \
+                -H "Authorization: token $GH_TOKEN" \
+                -H "Accept: application/vnd.github+json" \
+                -X DELETE \
+                "https://api.github.com/repos/${REPO}/releases/assets/${existing_id}"
+        fi
+
+        echo "  Uploading to GitHub..."
+        local upload_response url
+        upload_response=$(curl -s \
+            -H "Authorization: token $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "Content-Type: application/octet-stream" \
+            -X POST \
+            "https://uploads.github.com/repos/${REPO}/releases/${RELEASE_ID}/assets?name=${filename}" \
+            --data-binary "@${filepath}")
+
+        url=$(echo "$upload_response" | grep -o '"browser_download_url":"[^"]*"' | cut -d'"' -f4)
+        if [[ -n "$url" ]]; then
+            echo "  Uploaded: $url"
+        else
+            echo "  ERROR: Upload may have failed. Response:"
+            echo "$upload_response" | head -5
+        fi
+    }
+
+    upload_asset "$OUTPUT"
+    upload_asset "$BUILD_DIR/alpha-wrapper-V${VERSION}.sha256"
+
+    echo ""
+    echo "GitHub upload complete."
+    echo ""
+    echo "HiveOS Flight Sheet — Installation URL:"
+    echo "  https://github.com/${REPO}/releases/download/${TAG}/alpha-wrapper-V${VERSION}.tar.gz"
+    echo ""
+}
+
+# ---- Execute chosen deploy action --------------------------------------------
+case "$DEPLOY_CHOICE" in
+    l) deploy_local ;;
+    g) deploy_github ;;
+    b) deploy_local; deploy_github ;;
+    n|"") echo ""; echo "Build only — done." ;;
+    *) echo "Unknown choice '$DEPLOY_CHOICE' — skipping deploy." ;;
+esac
 
 echo ""
-echo "HiveOS will re-download and reinstall the wrapper on next miner start."
-echo ""
+echo "================================================"
+echo " Done! Build stored in: builds/${VERSION}/"
+echo "================================================"
