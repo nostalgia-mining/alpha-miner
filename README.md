@@ -40,6 +40,7 @@ This fork adds an enhanced HiveOS wrapper with:
 | `--vardiff` | Use pool-controlled variable difficulty (overrides default 524288) |
 | `--mdl ADDRESS` | Enable merged mining with ModelOS (MDL). Appends `;mdl=ADDRESS` to password. |
 | `--nostats` | Disable the on-screen stats helper |
+| `--detail` | Show diff, job ID, and share counter on each share line |
 | `--force-backend ada` | Override GPU arch auto-detection |
 | `FAILOVER_GRACE_SEC=120` | Seconds before failover check begins (default 120) |
 | `FAILOVER_DEAD_SEC=240` | Seconds with no share before pool is declared dead (default 240) |
