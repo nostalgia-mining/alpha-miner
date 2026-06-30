@@ -170,7 +170,7 @@ process_line() {
             fi
         fi
 
-    elif [[ "$component" == "share" ]] && [[ "$line" =~ "found_candidate" ]]; then
+    elif [[ "$component" == "share" ]] && [[ "$line" =~ "component=share found_candidate" ]]; then
         # v1.8.5+ candidate detection — push hit timestamp to queue
         if [[ "$PING_MODE" == "candidate" ]]; then
             local hit_ts_ms; hit_ts_ms="$(ts_to_ms "$ts")"
@@ -230,7 +230,7 @@ process_line() {
             fi
         fi
 
-    elif [[ "$component" == "share" ]] && [[ "$line" =~ "accepted" ]] && [[ ! "$line" =~ "found_candidate" ]]; then
+    elif [[ "$component" == "share" ]] && [[ "$line" =~ "accepted" ]] && [[ ! "$line" =~ "component=share found_candidate" ]]; then
         local hhmm; hhmm="$(date +'%Y-%m-%d %H:%M:%S')"
         local job_id=""
         [[ "$line" =~ [[:space:]]job=([^[:space:]]+) ]] && job_id="${BASH_REMATCH[1]}"
@@ -263,7 +263,7 @@ process_line() {
             "$hhmm" "$gpu_idx" "Share accepted (${ping_str})" "$diff" "$short_job" "$local_acc" "$local_rej"
         log_print "$_line"
 
-    elif [[ "$component" == "share" ]] && [[ "$line" =~ "rejected" || "$line" =~ "dropped" ]] && [[ ! "$line" =~ "found_candidate" ]]; then
+    elif [[ "$component" == "share" ]] && [[ "$line" =~ "rejected" || "$line" =~ "dropped" ]] && [[ ! "$line" =~ "component=share found_candidate" ]]; then
         local hhmm; hhmm="$(date +'%Y-%m-%d %H:%M:%S')"
         # Pop from hit queue to keep it in sync (same as accepted, but no ping)
         if [[ -n "${GPU_HIT_QUEUE[$gpu_idx]:-}" ]]; then
@@ -273,20 +273,25 @@ process_line() {
             GPU_HIT_QUEUE[$gpu_idx]="$queue"
         fi
 
-        local local_acc local_rej
-        DISPLAY_REJ[$gpu_idx]=$(( ${DISPLAY_REJ[$gpu_idx]:-0} + 1 ))
-        local_acc="${DISPLAY_ACC[$gpu_idx]:-0}"
-        local_rej="${DISPLAY_REJ[$gpu_idx]}"
-        local diff="${GPU_DIFF[$gpu_idx]:-?}"
-        local job_id=""
-        [[ "$line" =~ [[:space:]]job=([^[:space:]]+) ]] && job_id="${BASH_REMATCH[1]}"
-        local short_job="${job_id:0:8}"
-        local label="REJECTED"
-        [[ "$line" =~ "dropped" ]] && label="DROPPED"
-        local _line
-        printf -v _line "[%s] GPU %-2s %-25s diff=%-8s job=%-10s [%s/%s]" \
-            "$hhmm" "$gpu_idx" "Share $label" "$diff" "$short_job" "$local_acc" "$local_rej"
-        log_print "$_line"
+        # Only display rejected/dropped if it's an actual pool rejection (not internal obsolete_job)
+        if [[ "$line" =~ "reason=obsolete_job" ]]; then
+            : # silent — miner dropped it internally before submission, no user-facing event
+        else
+            local local_acc local_rej
+            DISPLAY_REJ[$gpu_idx]=$(( ${DISPLAY_REJ[$gpu_idx]:-0} + 1 ))
+            local_acc="${DISPLAY_ACC[$gpu_idx]:-0}"
+            local_rej="${DISPLAY_REJ[$gpu_idx]}"
+            local diff="${GPU_DIFF[$gpu_idx]:-?}"
+            local job_id=""
+            [[ "$line" =~ [[:space:]]job=([^[:space:]]+) ]] && job_id="${BASH_REMATCH[1]}"
+            local short_job="${job_id:0:8}"
+            local label="REJECTED"
+            [[ "$line" =~ "dropped" ]] && label="DROPPED"
+            local _line
+            printf -v _line "[%s] GPU %-2s %-25s diff=%-8s job=%-10s [%s/%s]" \
+                "$hhmm" "$gpu_idx" "Share $label" "$diff" "$short_job" "$local_acc" "$local_rej"
+            log_print "$_line"
+        fi
     fi
 }
 
