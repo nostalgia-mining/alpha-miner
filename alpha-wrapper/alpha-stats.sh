@@ -277,6 +277,9 @@ collect_gpu_metrics() {
         last_stat=$(printf '%s\n' "$gpu_status" | tail -n1)
         [[ "$last_stat" =~ [[:space:]]accepted=([0-9]+) ]] && acc="${BASH_REMATCH[1]}"
         [[ "$last_stat" =~ [[:space:]]rejected=([0-9]+) ]] && rej="${BASH_REMATCH[1]}"
+        local drop=0
+        [[ "$last_stat" =~ [[:space:]]dropped=([0-9]+) ]] && drop="${BASH_REMATCH[1]}"
+        rej=$(( rej + drop ))
 
         local diff; diff="$(get_gpu_diff "$idx")"
 
