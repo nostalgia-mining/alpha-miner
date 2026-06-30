@@ -165,7 +165,7 @@ process_line() {
             if [[ -n "$job_id" && "$job_id" != "$LAST_JOB_ID" ]]; then
                 LAST_JOB_ID="$job_id"
                 local _line
-                printf -v _line "[%s] GPU %-2s %-33s diff=%-17s job=%s" \
+                printf -v _line "[%s] GPU %-2s %-32s diff=%-16s job=%s" \
                     "$hhmm" "$gpu_idx" "New job generation=$gen" "$diff" "$job_id"
                 log_print "$_line"
             fi
@@ -261,7 +261,7 @@ process_line() {
         (( ping_ms > 0 )) && ping_str="${ping_ms} ms"
         local _line
         if (( WRAPPER_DETAIL )); then
-            printf -v _line "[%s] GPU %-2s %-33s diff=%-17s job=%s [%s/%s]" \
+            printf -v _line "[%s] GPU %-2s %-32s diff=%-16s job=%s [%s/%s]" \
                 "$hhmm" "$gpu_idx" "Share accepted (${ping_str})" "$diff" "$short_job" "$local_acc" "$local_rej"
         else
             printf -v _line "[%s] GPU %-2s Share accepted (%s)" \
@@ -295,7 +295,7 @@ process_line() {
             [[ "$line" =~ "dropped" ]] && label="DROPPED"
             local _line
             if (( WRAPPER_DETAIL )); then
-                printf -v _line "[%s] GPU %-2s %-33s diff=%-17s job=%s [%s/%s]" \
+                printf -v _line "[%s] GPU %-2s %-32s diff=%-16s job=%s [%s/%s]" \
                     "$hhmm" "$gpu_idx" "Share $label" "$diff" "$short_job" "$local_acc" "$local_rej"
             else
                 printf -v _line "[%s] GPU %-2s Share %s" \
