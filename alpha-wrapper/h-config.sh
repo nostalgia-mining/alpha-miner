@@ -21,6 +21,7 @@
 #   --mdl ADDRESS         Enable merged mining with ModelOS (MDL).
 #                         Appends ';mdl=ADDRESS' to the password string.
 #   --nostats             Suppress on-screen stats
+#   --detail              Show diff, job, counter on each share line
 #   FAILOVER_GRACE_SEC=N  Failover tunables
 #   FAILOVER_DEAD_SEC=N
 #   FAILOVER_RETURN_SEC=N
@@ -67,6 +68,7 @@ WRAPPER_GPU_VAL=""
 WRAPPER_NOSTATS=0
 WRAPPER_VARDIFF=0
 WRAPPER_EXTRALOGS=0
+WRAPPER_DETAIL=0
 WRAPPER_DIFF_VAL=""   # value from --diff (e.g. "524288" or "524288,262144")
 WRAPPER_MDL_VAL=""    # value from --mdl (ModelOS merged mining address)
 
@@ -85,6 +87,12 @@ if [[ -n "${CUSTOM_USER_CONFIG:-}" ]]; then
         # ---- --nostats -------------------------------------------------------
         if [[ "$tok" == "--nostats" ]]; then
             WRAPPER_NOSTATS=1
+            (( i++ )); continue
+        fi
+
+        # ---- --detail (show diff/job/counter on share lines) ----------------
+        if [[ "$tok" == "--detail" ]]; then
+            WRAPPER_DETAIL=1
             (( i++ )); continue
         fi
 
@@ -221,6 +229,7 @@ BASE_ARGS+=( "${EXTRA_ARGS[@]}" )
     for kv in "${WRAPPER_CFG[@]}"; do printf '%s\n' "$kv"; done
     printf 'WRAPPER_GPU_LIST=%q\n'   "${WRAPPER_GPU_VAL:-all}"
     printf 'WRAPPER_NOSTATS=%q\n'    "$WRAPPER_NOSTATS"
+    printf 'WRAPPER_DETAIL=%q\n'    "$WRAPPER_DETAIL"
     printf 'WRAPPER_EXTRALOGS=%q\n'  "${WRAPPER_EXTRALOGS:-0}"
     printf 'WRAPPER_PASSWORD=%q\n'   "$pass"
     printf 'POOL_URL=%q\n'          "${POOLS[0]}"

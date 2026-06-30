@@ -123,6 +123,7 @@ _launch() {
     GPU_LIST="$GPU_LIST" \
     WALLET="${WALLET:-unknown}" \
     POOL_HOST="$POOL_HOST" \
+    WRAPPER_DETAIL="${WRAPPER_DETAIL:-0}" \
         "$script" &
     echo $! > "$pidfile"
     echo "$(_ts) [INFO] $label started (PID $!)"

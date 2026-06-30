@@ -20,6 +20,7 @@ BUFFER_FILE="${BUFFER_FILE:-/run/alpha-wrapper/miner-raw.buf}"
 EVENTS_FILE="${EVENTS_FILE:-/run/alpha-wrapper/events.log}"
 GPU_LIST="${GPU_LIST:-0}"
 BUFFER_DIR="${BUFFER_DIR:-/run/alpha-wrapper}"
+WRAPPER_DETAIL="${WRAPPER_DETAIL:-0}"
 
 # Helper: print to stdout only (h-run.sh tee handles the log file)
 log_print() {
@@ -259,8 +260,13 @@ process_line() {
         local ping_str="n/a"
         (( ping_ms > 0 )) && ping_str="${ping_ms} ms"
         local _line
-        printf -v _line "[%s] GPU %-2s %-25s diff=%-8s job=%-10s [%s/%s]" \
-            "$hhmm" "$gpu_idx" "Share accepted (${ping_str})" "$diff" "$short_job" "$local_acc" "$local_rej"
+        if (( WRAPPER_DETAIL )); then
+            printf -v _line "[%s] GPU %-2s %-25s diff=%-8s job=%-10s [%s/%s]" \
+                "$hhmm" "$gpu_idx" "Share accepted (${ping_str})" "$diff" "$short_job" "$local_acc" "$local_rej"
+        else
+            printf -v _line "[%s] GPU %-2s Share accepted (%s)" \
+                "$hhmm" "$gpu_idx" "$ping_str"
+        fi
         log_print "$_line"
 
     elif [[ "$component" == "share" ]] && [[ "$line" =~ "rejected" || "$line" =~ "dropped" ]] && [[ ! "$line" =~ "component=share found_candidate" ]]; then
@@ -288,8 +294,13 @@ process_line() {
             local label="REJECTED"
             [[ "$line" =~ "dropped" ]] && label="DROPPED"
             local _line
-            printf -v _line "[%s] GPU %-2s %-25s diff=%-8s job=%-10s [%s/%s]" \
-                "$hhmm" "$gpu_idx" "Share $label" "$diff" "$short_job" "$local_acc" "$local_rej"
+            if (( WRAPPER_DETAIL )); then
+                printf -v _line "[%s] GPU %-2s %-25s diff=%-8s job=%-10s [%s/%s]" \
+                    "$hhmm" "$gpu_idx" "Share $label" "$diff" "$short_job" "$local_acc" "$local_rej"
+            else
+                printf -v _line "[%s] GPU %-2s Share %s" \
+                    "$hhmm" "$gpu_idx" "$label"
+            fi
             log_print "$_line"
         fi
     fi
