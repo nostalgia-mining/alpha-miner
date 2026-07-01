@@ -101,6 +101,7 @@ start_buffer_writer() {
     # The events script reads from this file — it never gets trimmed.
     local sidecar="$BUFFER_DIR/events.log"
     > "$sidecar"  # clear on each miner launch
+    rm -f "$BUFFER_DIR/miner-version"  # clear so events script waits for fresh detection
     
     (
         local cnt=0
