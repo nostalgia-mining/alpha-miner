@@ -60,9 +60,11 @@ declare -A DISPLAY_REJ=()   # Our own rejected counter (incremented on share rej
 declare -A GPU_HIT_QUEUE=()  # Queue of hit timestamps per GPU (space-separated)
 declare -A GPU_GHOST_HITS=() # Hits counted by miner but never seen as found_candidate (obsolete_job)
 declare -A GPU_DIFF=()
+declare -A PENDING_CHALLENGE=()  # Per-GPU: "solve_sec|hhmm" buffered until difficulty_set arrives
 LAST_JOB_ID=""
 LAST_POOL_HOST=""
 POOL_RECONNECTING=0  # flag: suppress "connected" prints during reconnect attempts
+POOL_CONNECTED_PRINTED=0  # flag: "Pool connected" printed for this connection
 
 # ===== Timestamp -> milliseconds ==============================================
 ts_to_ms() {
@@ -140,13 +142,19 @@ process_line() {
             local solve_sec=""
             [[ "$line" =~ [[:space:]]seconds=([0-9.]+) ]] && solve_sec="${BASH_REMATCH[1]}"
             POOL_RECONNECTING=0
-            log_print "[${hhmm}] [INFO] Pool connected: ${LAST_POOL_HOST}"
-            log_print "[${hhmm}] [INFO] Challenge solved (${solve_sec:-?}s)"
+            # Print "Pool connected" once for this connection (first GPU to solve)
+            if (( POOL_CONNECTED_PRINTED == 0 )); then
+                POOL_CONNECTED_PRINTED=1
+                log_print "[${hhmm}] [INFO] Pool connected: ${LAST_POOL_HOST}"
+            fi
+            # Buffer until difficulty_set arrives — combine into one line per GPU
+            PENDING_CHALLENGE[$gpu_idx]="${solve_sec:-?}|${hhmm}"
         elif [[ "$line" =~ [[:space:]]connected[[:space:]] && "$line" =~ host= ]]; then
             local host="" port=""
             [[ "$line" =~ [[:space:]]host=([^[:space:]]+) ]] && host="${BASH_REMATCH[1]}"
             [[ "$line" =~ [[:space:]]port=([^[:space:]]+) ]] && port="${BASH_REMATCH[1]}"
             LAST_POOL_HOST="${host}:${port}"
+            POOL_CONNECTED_PRINTED=0  # reset for this new connection
             # Don't print "Pool connected" here — wait for challenge_solved to confirm
         elif [[ "$line" =~ "disconnected" ]]; then
             log_print "[${hhmm}] [INFO] Pool disconnected"
@@ -155,7 +163,16 @@ process_line() {
             [[ "$line" =~ [[:space:]]difficulty=([0-9.]+) ]] && diff="${BASH_REMATCH[1]}"
             diff="${diff%.00}"
             [[ -n "$diff" ]] && GPU_DIFF[$gpu_idx]="$diff"
-            log_print "[${hhmm}] [INFO] GPU ${gpu_idx} Difficulty set: ${diff}"
+            # Combine with pending challenge line for this GPU
+            if [[ -n "${PENDING_CHALLENGE[$gpu_idx]:-}" ]]; then
+                local pending="${PENDING_CHALLENGE[$gpu_idx]}"
+                local solve_sec="${pending%%|*}"
+                local ch_hhmm="${pending##*|}"
+                unset "PENDING_CHALLENGE[$gpu_idx]"
+                log_print "$(printf "[%s] [INFO] GPU %-2s  Challenge solved (%ss)  Difficulty set: %s" "$ch_hhmm" "$gpu_idx" "$solve_sec" "$diff")"
+            else
+                log_print "[${hhmm}] [INFO] GPU ${gpu_idx} Difficulty set: ${diff}"
+            fi
         elif [[ "$line" =~ [[:space:]]"job "[[:space:]] ]] || [[ "$line" =~ [[:space:]]job[[:space:]]id= ]]; then
             local job_id="" gen="" diff=""
             [[ "$line" =~ [[:space:]]id=([^[:space:]]+) ]]        && job_id="${BASH_REMATCH[1]}"
