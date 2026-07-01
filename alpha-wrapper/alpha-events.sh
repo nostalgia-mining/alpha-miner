@@ -35,20 +35,28 @@ PING_MODE="status"  # "status" = v1.8.3 (push on hits increment), "candidate" = 
 detect_version() {
     local ver_file="$BUFFER_DIR/miner-version"
     local wait_count=0
-    while [[ ! -f "$ver_file" ]] && (( wait_count < 60 )); do
+    # Wait for backend to be detected (workspace_ready comes after first status line)
+    while (( wait_count < 60 )); do
+        if [[ -f "$ver_file" ]]; then
+            local content; content=$(cat "$ver_file")
+            # Wait until backend is resolved (no longer 'unknown')
+            [[ "$content" != *":unknown" ]] && break
+        fi
         sleep 0.5
         (( wait_count++ ))
     done
     if [[ -f "$ver_file" ]]; then
-        MINER_VERSION=$(cat "$ver_file")
-        # v1.8.5+ has found_candidate lines — use them for precise ping
-        local major minor patch
-        IFS='.' read -r major minor patch <<< "$MINER_VERSION"
-        if (( major > 1 )) || (( major == 1 && minor > 8 )) || (( major == 1 && minor == 8 && patch >= 5 )); then
+        local content; content=$(cat "$ver_file")
+        MINER_VERSION="${content%%:*}"
+        local backend="${content##*:}"
+        # Use candidate mode only when plainproof backend is confirmed
+        if [[ "$backend" == *"plainproof"* ]]; then
             PING_MODE="candidate"
         fi
+        log_print "[$(date +'%Y-%m-%d %H:%M:%S')] [INFO] Miner version: ${MINER_VERSION:-unknown} backend: ${backend} — ping mode: $PING_MODE"
+    else
+        log_print "[$(date +'%Y-%m-%d %H:%M:%S')] [INFO] Miner version: unknown — ping mode: $PING_MODE"
     fi
-    log_print "[$(date +'%Y-%m-%d %H:%M:%S')] [INFO] Miner version: ${MINER_VERSION:-unknown} — ping mode: $PING_MODE"
 }
 
 # ===== State per GPU ==========================================================
