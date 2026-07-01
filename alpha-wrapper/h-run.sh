@@ -82,6 +82,25 @@ echo "$GPU_LIST" > "$GPU_LIST_FILE"
 export CUDA_DEVICE_ORDER=PCI_BUS_ID
 
 # ============================================================================
+# Driver version check (v1.8.5+ requires driver 580+ / CUDA 13)
+# ============================================================================
+DRIVER_VER=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -1 | tr -d ' ')
+DRIVER_MAJOR="${DRIVER_VER%%.*}"
+MINER_MINOR=$(echo "$CUSTOM_VERSION" | cut -d. -f2)
+MINER_PATCH=$(echo "$CUSTOM_VERSION" | cut -d. -f3)
+if [[ -n "$DRIVER_MAJOR" && "$DRIVER_MAJOR" =~ ^[0-9]+$ ]]; then
+    if (( MINER_MINOR >= 8 && MINER_PATCH >= 5 )) && (( DRIVER_MAJOR < 580 )); then
+        echo "$(_ts) [WARN] ============================================================"
+        echo "$(_ts) [WARN] Driver version: ${DRIVER_VER} — alpha-miner v1.8.5+ requires"
+        echo "$(_ts) [WARN] NVIDIA driver ≥ 580 (CUDA 13). Ping will show (n/a)."
+        echo "$(_ts) [WARN] Please update your driver to 580 or newer."
+        echo "$(_ts) [WARN] ============================================================"
+    else
+        echo "$(_ts) [INFO] Driver version: ${DRIVER_VER}"
+    fi
+fi
+
+# ============================================================================
 # --extralogs: write all raw miner output to a persistent log file on disk.
 # Rotates at ~200 MB: current .log + previous .log.1 (max ~400 MB on disk).
 # Access via: tail -f /var/log/miner/custom/alpha-wrapper-raw.log

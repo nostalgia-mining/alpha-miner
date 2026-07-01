@@ -108,8 +108,6 @@ start_buffer_writer() {
         local prev_hits=-1  # track hits to detect changes
         local prev_dropped=0  # track dropped to detect changes
         local ver_detected=0  # flag: have we captured miner version yet?
-        local backend_detected=0  # flag: have we captured proof backend yet?
-        local miner_ver=""
 
         while IFS= read -r line; do
             printf '%s\n' "$line" >> "$BUFFER_FILE"
@@ -117,20 +115,9 @@ start_buffer_writer() {
             # ---- Version detection: grab ver= from first status line ----
             if (( ver_detected == 0 )) && [[ "$line" == *"component=miner status"* ]]; then
                 if [[ "$line" =~ [[:space:]]ver=([^[:space:]]+) ]]; then
-                    miner_ver="${BASH_REMATCH[1]}"
-                    echo "${miner_ver}:unknown" > "$BUFFER_DIR/miner-version"
+                    echo "${BASH_REMATCH[1]}" > "$BUFFER_DIR/miner-version"
                     ver_detected=1
                 fi
-            fi
-
-            # ---- Backend detection: grab reason= from workspace_ready ----
-            if (( backend_detected == 0 )) && [[ "$line" == *"workspace_ready"* ]]; then
-                local backend="unknown"
-                if [[ "$line" =~ [[:space:]]reason=([^[:space:]]+) ]]; then
-                    backend="${BASH_REMATCH[1]}"
-                fi
-                echo "${miner_ver}:${backend}" > "$BUFFER_DIR/miner-version"
-                backend_detected=1
             fi
 
             # ---- Sidecar: write meaningful events only ----
