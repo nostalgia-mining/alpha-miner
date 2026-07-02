@@ -93,18 +93,11 @@ MINER_PATCH=$(echo "$CUSTOM_VERSION" | cut -d. -f3)
 
 if [[ -n "$DRIVER_MAJOR" && "$DRIVER_MAJOR" =~ ^[0-9]+$ ]]; then
     if (( MINER_MINOR >= 8 && MINER_PATCH >= 5 )) && (( DRIVER_MAJOR < 580 )); then
-        # Driver too old — binary may not work at all
-        echo "$(_ts) [WARN] ============================================================"
-        echo "$(_ts) [WARN] Driver ${DRIVER_VER} is too old for alpha-miner v1.8.5+."
-        echo "$(_ts) [WARN] Requires NVIDIA driver ≥ 580 (CUDA 13). Please update."
-        echo "$(_ts) [WARN] ============================================================"
+        echo "$(_ts) [WARN] Driver ${DRIVER_VER} too old for v1.8.5+ — requires ≥ 580 (CUDA 13)"
     elif (( MINER_MINOR >= 8 && MINER_PATCH >= 5 )) && [[ -n "$GPU_COMPUTE_MAJOR" ]] && (( GPU_COMPUTE_MAJOR < 9 )); then
-        # Driver OK but GPU is Ampere or older — xk_native backend, no found_candidate
-        echo "$(_ts) [INFO] Driver version: ${DRIVER_VER} (GPU compute ${GPU_COMPUTE} — Ampere or older)"
-        echo "$(_ts) [INFO] Share ping will show (n/a) on this GPU with v1.8.5+"
-        echo "$(_ts) [INFO] Use v1.8.3 for accurate ping measurement on Ampere GPUs"
+        echo "$(_ts) [INFO] Driver ${DRIVER_VER}  GPU compute ${GPU_COMPUTE} — ping mode: n/a (use v1.8.3 for ping)"
     else
-        echo "$(_ts) [INFO] Driver version: ${DRIVER_VER}"
+        echo "$(_ts) [INFO] Driver ${DRIVER_VER}"
     fi
 fi
 
