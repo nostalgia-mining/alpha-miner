@@ -21,6 +21,7 @@ EVENTS_FILE="${EVENTS_FILE:-/run/alpha-wrapper/events.log}"
 GPU_LIST="${GPU_LIST:-0}"
 BUFFER_DIR="${BUFFER_DIR:-/run/alpha-wrapper}"
 WRAPPER_DETAIL="${WRAPPER_DETAIL:-0}"
+GPU_COMPUTE_NUM="${GPU_COMPUTE_NUM:-0}"
 
 # Helper: print to stdout only (h-run.sh tee handles the log file)
 log_print() {
@@ -41,11 +42,15 @@ detect_version() {
     done
     if [[ -f "$ver_file" ]]; then
         MINER_VERSION=$(cat "$ver_file")
-        # v1.8.5+ emits found_candidate (plainproof backend on Ada/Blackwell)
         local major minor patch
         IFS='.' read -r major minor patch <<< "$MINER_VERSION"
         if (( major > 1 )) || (( major == 1 && minor > 8 )) || (( major == 1 && minor == 8 && patch >= 5 )); then
-            PING_MODE="candidate"
+            # v1.8.5+: candidate mode unless GPU is Ampere or older (no found_candidate)
+            if (( GPU_COMPUTE_NUM > 0 && GPU_COMPUTE_NUM < 89 )); then
+                PING_MODE="n/a"
+            else
+                PING_MODE="candidate"
+            fi
         fi
     fi
     log_print "[$(date +'%Y-%m-%d %H:%M:%S')] [INFO] Miner version: ${MINER_VERSION:-unknown} — ping mode: $PING_MODE"
@@ -276,15 +281,24 @@ process_line() {
         local_rej="${DISPLAY_REJ[$gpu_idx]:-0}"
         local diff="${GPU_DIFF[$gpu_idx]:-?}"
         local short_job="${job_id:0:8}"
-        local ping_str="n/a"
-        (( ping_ms > 0 )) && ping_str="${ping_ms} ms"
+        local ping_str=""
+        if [[ "$PING_MODE" != "n/a" ]]; then
+            (( ping_ms > 0 )) && ping_str="${ping_ms} ms" || ping_str="n/a"
+        fi
         local _line
         if (( WRAPPER_DETAIL )); then
+            local share_label="Share accepted"
+            [[ -n "$ping_str" ]] && share_label="Share accepted (${ping_str})"
             printf -v _line "[%s] GPU %-2s %-32s diff=%-16s job=%s [%s/%s]" \
-                "$hhmm" "$gpu_idx" "Share accepted (${ping_str})" "$diff" "$short_job" "$local_acc" "$local_rej"
+                "$hhmm" "$gpu_idx" "$share_label" "$diff" "$short_job" "$local_acc" "$local_rej"
         else
-            printf -v _line "[%s] GPU %-2s Share accepted (%s)" \
-                "$hhmm" "$gpu_idx" "$ping_str"
+            if [[ -n "$ping_str" ]]; then
+                printf -v _line "[%s] GPU %-2s Share accepted (%s)" \
+                    "$hhmm" "$gpu_idx" "$ping_str"
+            else
+                printf -v _line "[%s] GPU %-2s Share accepted" \
+                    "$hhmm" "$gpu_idx"
+            fi
         fi
         log_print "$_line"
 

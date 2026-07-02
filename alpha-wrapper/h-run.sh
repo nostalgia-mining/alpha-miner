@@ -152,6 +152,7 @@ _launch() {
     WALLET="${WALLET:-unknown}" \
     POOL_HOST="$POOL_HOST" \
     WRAPPER_DETAIL="${WRAPPER_DETAIL:-0}" \
+    GPU_COMPUTE_NUM="${GPU_COMPUTE_NUM:-0}" \
         "$script" &
     echo $! > "$pidfile"
     echo "$(_ts) [INFO] $label started (PID $!)"
