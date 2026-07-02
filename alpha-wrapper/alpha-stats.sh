@@ -67,6 +67,7 @@ unset _ttl _lw _rw _L _R
 
 VER="unknown"
 START_EPOCH="$(date +%s)"
+START_FROM_JOB=0  # flag: have we anchored uptime to first job yet
 
 # Read runtime version (written by supervisor from first miner status line)
 _ver_file="${BUFFER_DIR:-/run/alpha-wrapper}/miner-version"
@@ -204,6 +205,23 @@ collect_gpu_metrics() {
 
     # Cache buffer content once for all GPUs (avoids repeated tail+grep)
     _BUF_CACHE=$(tail -n "$HSTATS_RAW_LINES" "$BUFFER_FILE" 2>/dev/null)
+
+    # Anchor uptime to first job (generation=1) once per session
+    if (( START_FROM_JOB == 0 )); then
+        local first_job_ts
+        first_job_ts=$(printf '%s\n' "$_BUF_CACHE" \
+            | grep -aE 'component=pool.*generation=1[^0-9]' \
+            | head -1 \
+            | grep -oE '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}')
+        if [[ -n "$first_job_ts" ]]; then
+            local job_epoch
+            job_epoch=$(date -d "${first_job_ts}Z" +%s 2>/dev/null) || true
+            if [[ -n "$job_epoch" && "$job_epoch" =~ ^[0-9]+$ ]]; then
+                START_EPOCH="$job_epoch"
+                START_FROM_JOB=1
+            fi
+        fi
+    fi
 
     # Detect current pool from latest "connected" event in buffer
     local conn_line
