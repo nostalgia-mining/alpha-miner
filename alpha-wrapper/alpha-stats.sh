@@ -11,6 +11,7 @@ LOG_FILE="${LOG_FILE:-/var/log/miner/custom/alpha-wrapper.log}"
 GPU_LIST="${GPU_LIST:-0}"
 WALLET="${WALLET:-unknown}"
 POOL_HOST="${POOL_HOST:-alphapool.tech:5566}"
+MDL_WALLET="${MDL_WALLET:-}"
 
 STATS_INTERVAL=30
 MAX_SAMPLES=6
@@ -398,13 +399,24 @@ render() {
     printf -v _h1 "%s%*s%s" "$h1_left" "$h1_gap" '' "$h1_right"
     tprint "${G}${ts} ${_h1}${R}"
 
-    # ---- Header row 2: left "PEARL / AlphaPool", right "Wallet: ..." -------
-    local h2_left="PEARL / AlphaPool"
+    # ---- Header row 2: left "AlphaPool PEARL (pearlhash)", right "Wallet: ..." -------
+    local h2_left="AlphaPool PEARL (pearlhash)"
     local h2_right="Wallet: ${wallet_s}"
     local h2_gap=$(( TW - ${#h2_left} - ${#h2_right} ))
     (( h2_gap < 1 )) && h2_gap=1
     printf -v _h2 "%s%*s%s" "$h2_left" "$h2_gap" '' "$h2_right"
     tprint "${G}${ts} ${_h2}${R}"
+
+    # ---- Header row 3 (optional): merged mining MDL -------------------------
+    if [[ -n "$MDL_WALLET" ]]; then
+        local mdl_s; mdl_s="$(trunc_wallet "$MDL_WALLET")"
+        local h3_left="Merged mining: MDL (auxpow)"
+        local h3_right="MDL Wallet: ${mdl_s}"
+        local h3_gap=$(( TW - ${#h3_left} - ${#h3_right} ))
+        (( h3_gap < 1 )) && h3_gap=1
+        printf -v _h3 "%s%*s%s" "$h3_left" "$h3_gap" '' "$h3_right"
+        tprint "${G}${ts} ${_h3}${R}"
+    fi
 
     tprint "${G}${ts} ${BAR_DASH}${R}"
 

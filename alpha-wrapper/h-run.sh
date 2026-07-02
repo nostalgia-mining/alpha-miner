@@ -134,6 +134,12 @@ fi
 POOL_HOST="${POOLS[0]:-alphapool.tech:5566}"
 POOL_HOST="${POOL_HOST#stratum+tcp://}"
 
+# Parse MDL wallet from password string (e.g. x;d=524288;mdl=mdl1abc...)
+MDL_WALLET=""
+if [[ "${WRAPPER_PASSWORD:-}" =~ mdl=([^;]+) ]]; then
+    MDL_WALLET="${BASH_REMATCH[1]}"
+fi
+
 # ============================================================================
 # Launch on-screen helpers (event printer + stats table)
 # Both receive BUFFER_FILE, LOG_FILE, GPU_LIST, WALLET, POOL_HOST
@@ -153,6 +159,7 @@ _launch() {
     POOL_HOST="$POOL_HOST" \
     WRAPPER_DETAIL="${WRAPPER_DETAIL:-0}" \
     GPU_COMPUTE_NUM="${GPU_COMPUTE_NUM:-0}" \
+    MDL_WALLET="${MDL_WALLET:-}" \
         "$script" &
     echo $! > "$pidfile"
     echo "$(_ts) [INFO] $label started (PID $!)"
