@@ -36,36 +36,40 @@ detect_version() {
     local ver_file="$BUFFER_DIR/miner-version"
     local backend_file="$BUFFER_DIR/miner-backend"
     local wait_count=0
-    # Wait for both version and backend to be written
-    while (( wait_count < 60 )); do
-        [[ -f "$ver_file" && -f "$backend_file" ]] && break
-        # v1.8.3 never writes workspace_ready — stop waiting after version is known
-        if [[ -f "$ver_file" ]]; then
-            local v; v=$(cat "$ver_file")
-            local maj min pat
-            IFS='.' read -r maj min pat <<< "$v"
-            (( maj == 1 && min == 8 && pat < 5 )) && break  # v1.8.3, no backend file expected
-        fi
+    # First wait for version file
+    while [[ ! -f "$ver_file" ]] && (( wait_count < 60 )); do
         sleep 0.5
         (( wait_count++ ))
     done
+    [[ ! -f "$ver_file" ]] && { log_print "[$(date +'%Y-%m-%d %H:%M:%S')] [INFO] Miner version: unknown — ping mode: $PING_MODE"; return; }
 
-    if [[ -f "$ver_file" ]]; then
-        MINER_VERSION=$(cat "$ver_file")
-        local major minor patch
-        IFS='.' read -r major minor patch <<< "$MINER_VERSION"
-        if (( major > 1 )) || (( major == 1 && minor > 8 )) || (( major == 1 && minor == 8 && patch >= 5 )); then
-            # v1.8.5+ — check backend
-            local backend="unknown"
-            [[ -f "$backend_file" ]] && backend=$(cat "$backend_file")
-            if [[ "$backend" == *"plainproof"* ]]; then
-                PING_MODE="candidate"
-            else
+    MINER_VERSION=$(cat "$ver_file")
+    local major minor patch
+    IFS='.' read -r major minor patch <<< "$MINER_VERSION"
+
+    if (( major > 1 )) || (( major == 1 && minor > 8 )) || (( major == 1 && minor == 8 && patch >= 5 )); then
+        # v1.8.5+: wait briefly for backend file
+        # Ada/Blackwell never writes it (no workspace_ready line) — default to candidate
+        # Ampere writes it quickly — detect xk_native → n/a
+        local backend_wait=0
+        while [[ ! -f "$backend_file" ]] && (( backend_wait < 10 )); do
+            sleep 0.5
+            (( backend_wait++ ))
+        done
+        if [[ -f "$backend_file" ]]; then
+            local backend; backend=$(cat "$backend_file")
+            if [[ "$backend" == *"xk_native"* ]]; then
                 PING_MODE="n/a"
+            else
+                PING_MODE="candidate"
             fi
+        else
+            # No workspace_ready emitted — Ada/Blackwell plainproof backend
+            PING_MODE="candidate"
         fi
-        # v1.8.3 stays at default PING_MODE="status"
     fi
+    # v1.8.3 stays at default PING_MODE="status"
+
     log_print "[$(date +'%Y-%m-%d %H:%M:%S')] [INFO] Miner version: ${MINER_VERSION:-unknown} — ping mode: $PING_MODE"
 }
 

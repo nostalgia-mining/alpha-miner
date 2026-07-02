@@ -87,20 +87,22 @@ export CUDA_DEVICE_ORDER=PCI_BUS_ID
 DRIVER_VER=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -1 | tr -d ' ')
 DRIVER_MAJOR="${DRIVER_VER%%.*}"
 GPU_COMPUTE=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader 2>/dev/null | head -1 | tr -d ' ')
-GPU_COMPUTE_MAJOR="${GPU_COMPUTE%%.*}"
+# Convert compute cap to integer for comparison (e.g. 8.6->86, 8.9->89, 10.0->100)
+GPU_COMPUTE_NUM=$(echo "$GPU_COMPUTE" | tr -d '.' | sed 's/^0*//' | grep -oE '^[0-9]+' || echo 0)
 MINER_MINOR=$(echo "$CUSTOM_VERSION" | cut -d. -f2)
 MINER_PATCH=$(echo "$CUSTOM_VERSION" | cut -d. -f3)
 
 if [[ -n "$DRIVER_MAJOR" && "$DRIVER_MAJOR" =~ ^[0-9]+$ ]]; then
     if (( MINER_MINOR >= 8 && MINER_PATCH >= 5 )) && (( DRIVER_MAJOR < 580 )); then
-        if [[ -n "$GPU_COMPUTE_MAJOR" ]] && (( GPU_COMPUTE_MAJOR >= 9 )); then
+        if [[ -n "$GPU_COMPUTE_NUM" ]] && (( GPU_COMPUTE_NUM >= 89 )); then
             # Ada/Blackwell GPU with old driver — miner won't run
             echo "$(_ts) [WARN] Driver ${DRIVER_VER}  GPU compute ${GPU_COMPUTE} — please update driver to 580+"
         else
             # Ampere or older with old driver — also won't run
             echo "$(_ts) [WARN] Driver ${DRIVER_VER} too old for v1.8.5+ — requires ≥ 580 (CUDA 13)"
         fi
-    elif (( MINER_MINOR >= 8 && MINER_PATCH >= 5 )) && [[ -n "$GPU_COMPUTE_MAJOR" ]] && (( GPU_COMPUTE_MAJOR < 9 )); then
+    elif (( MINER_MINOR >= 8 && MINER_PATCH >= 5 )) && [[ -n "$GPU_COMPUTE_NUM" ]] && (( GPU_COMPUTE_NUM < 89 )); then
+        # Ampere or older, driver OK — xk_native backend, ping n/a
         echo "$(_ts) [INFO] Driver ${DRIVER_VER}  GPU compute ${GPU_COMPUTE} — ping mode: n/a (use v1.8.3 for ping)"
     else
         echo "$(_ts) [INFO] Driver ${DRIVER_VER}"
