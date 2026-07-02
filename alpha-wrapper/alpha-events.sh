@@ -34,42 +34,20 @@ PING_MODE="status"  # "status" = v1.8.3 (push on hits increment), "candidate" = 
 
 detect_version() {
     local ver_file="$BUFFER_DIR/miner-version"
-    local backend_file="$BUFFER_DIR/miner-backend"
     local wait_count=0
-    # First wait for version file
     while [[ ! -f "$ver_file" ]] && (( wait_count < 60 )); do
         sleep 0.5
         (( wait_count++ ))
     done
-    [[ ! -f "$ver_file" ]] && { log_print "[$(date +'%Y-%m-%d %H:%M:%S')] [INFO] Miner version: unknown — ping mode: $PING_MODE"; return; }
-
-    MINER_VERSION=$(cat "$ver_file")
-    local major minor patch
-    IFS='.' read -r major minor patch <<< "$MINER_VERSION"
-
-    if (( major > 1 )) || (( major == 1 && minor > 8 )) || (( major == 1 && minor == 8 && patch >= 5 )); then
-        # v1.8.5+: wait briefly for backend file
-        # Ada/Blackwell never writes it (no workspace_ready line) — default to candidate
-        # Ampere writes it quickly — detect xk_native → n/a
-        local backend_wait=0
-        while [[ ! -f "$backend_file" ]] && (( backend_wait < 10 )); do
-            sleep 0.5
-            (( backend_wait++ ))
-        done
-        if [[ -f "$backend_file" ]]; then
-            local backend; backend=$(cat "$backend_file")
-            if [[ "$backend" == *"xk_native"* ]]; then
-                PING_MODE="n/a"
-            else
-                PING_MODE="candidate"
-            fi
-        else
-            # No workspace_ready emitted — Ada/Blackwell plainproof backend
+    if [[ -f "$ver_file" ]]; then
+        MINER_VERSION=$(cat "$ver_file")
+        # v1.8.5+ emits found_candidate (plainproof backend on Ada/Blackwell)
+        local major minor patch
+        IFS='.' read -r major minor patch <<< "$MINER_VERSION"
+        if (( major > 1 )) || (( major == 1 && minor > 8 )) || (( major == 1 && minor == 8 && patch >= 5 )); then
             PING_MODE="candidate"
         fi
     fi
-    # v1.8.3 stays at default PING_MODE="status"
-
     log_print "[$(date +'%Y-%m-%d %H:%M:%S')] [INFO] Miner version: ${MINER_VERSION:-unknown} — ping mode: $PING_MODE"
 }
 
@@ -298,28 +276,15 @@ process_line() {
         local_rej="${DISPLAY_REJ[$gpu_idx]:-0}"
         local diff="${GPU_DIFF[$gpu_idx]:-?}"
         local short_job="${job_id:0:8}"
-        local ping_str=""
-        if [[ "$PING_MODE" == "n/a" ]]; then
-            ping_str=""   # deactivated — don't show ping at all
-        elif (( ping_ms > 0 )); then
-            ping_str="${ping_ms} ms"
-        else
-            ping_str="n/a"
-        fi
+        local ping_str="n/a"
+        (( ping_ms > 0 )) && ping_str="${ping_ms} ms"
         local _line
         if (( WRAPPER_DETAIL )); then
-            local share_label="Share accepted"
-            [[ -n "$ping_str" ]] && share_label="Share accepted (${ping_str})"
             printf -v _line "[%s] GPU %-2s %-32s diff=%-16s job=%s [%s/%s]" \
-                "$hhmm" "$gpu_idx" "$share_label" "$diff" "$short_job" "$local_acc" "$local_rej"
+                "$hhmm" "$gpu_idx" "Share accepted (${ping_str})" "$diff" "$short_job" "$local_acc" "$local_rej"
         else
-            if [[ -n "$ping_str" ]]; then
-                printf -v _line "[%s] GPU %-2s Share accepted (%s)" \
-                    "$hhmm" "$gpu_idx" "$ping_str"
-            else
-                printf -v _line "[%s] GPU %-2s Share accepted" \
-                    "$hhmm" "$gpu_idx"
-            fi
+            printf -v _line "[%s] GPU %-2s Share accepted (%s)" \
+                "$hhmm" "$gpu_idx" "$ping_str"
         fi
         log_print "$_line"
 

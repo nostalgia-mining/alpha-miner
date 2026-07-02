@@ -102,7 +102,6 @@ start_buffer_writer() {
     local sidecar="$BUFFER_DIR/events.log"
     > "$sidecar"  # clear on each miner launch
     rm -f "$BUFFER_DIR/miner-version"   # clear so events script waits for fresh detection
-    rm -f "$BUFFER_DIR/miner-backend"   # clear so events script waits for fresh backend
     
     (
         local cnt=0
@@ -110,7 +109,6 @@ start_buffer_writer() {
         local prev_hits=-1  # track hits to detect changes
         local prev_dropped=0  # track dropped to detect changes
         local ver_detected=0  # flag: have we captured miner version yet?
-        local backend_detected=0  # flag: have we captured proof backend yet?
 
         while IFS= read -r line; do
             printf '%s\n' "$line" >> "$BUFFER_FILE"
@@ -121,14 +119,6 @@ start_buffer_writer() {
                     echo "${BASH_REMATCH[1]}" > "$BUFFER_DIR/miner-version"
                     ver_detected=1
                 fi
-            fi
-
-            # ---- Backend detection: grab reason= from workspace_ready ----
-            if (( backend_detected == 0 )) && [[ "$line" == *"workspace_ready"* ]]; then
-                local backend="unknown"
-                [[ "$line" =~ [[:space:]]reason=([^[:space:]]+) ]] && backend="${BASH_REMATCH[1]}"
-                echo "$backend" > "$BUFFER_DIR/miner-backend"
-                backend_detected=1
             fi
 
             # ---- Sidecar: write meaningful events only ----
