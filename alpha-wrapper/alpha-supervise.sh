@@ -61,13 +61,13 @@ touch "$BUFFER_FILE"   2>/dev/null
 # Timestamp helper (local time)
 _ts() { echo "[$(date +'%Y-%m-%d %H:%M:%S')]"; }
 
-echo "$(_ts) ==========================================================="
+echo "$(_ts) [INFO] ===================================================================================="
 echo "$(_ts) [INFO] $CUSTOM_NAME v$CUSTOM_VERSION  (failover supervisor, pid $$)"
 echo "$(_ts) [INFO] Pools (${#POOLS[@]}): ${POOLS[*]}"
 echo "$(_ts) [INFO] Base args: ${ALPHA_BASE_ARGS[*]}"
 echo "$(_ts) [INFO] Failover: grace=${FAILOVER_GRACE_SEC}s dead=${FAILOVER_DEAD_SEC}s return=${FAILOVER_RETURN_SEC}s"
 echo "$(_ts) [INFO] Buffer: $BUFFER_FILE (${BUFFER_LINES} lines cap)"
-echo "$(_ts) ==========================================================="
+echo "$(_ts) [INFO] ===================================================================================="
 
 miner_pid=""
 writer_pid=""
@@ -225,7 +225,7 @@ primary_retry_at=$(( $(now) + FAILOVER_RETURN_SEC ))
 
 while :; do
     pool="${POOLS[$idx]}"
-    echo "$(_ts) [INFO] launching miner on pool[$idx]=$pool"
+    echo "$(_ts) [INFO] Launching miner on pool[$idx]=$pool"
 
     # Named pipe: miner output flows into the buffer writer, never to screen/log
     MINER_PIPE="$BUFFER_DIR/miner-$$.pipe"
