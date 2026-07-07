@@ -61,13 +61,11 @@ touch "$BUFFER_FILE"   2>/dev/null
 # Timestamp helper (local time)
 _ts() { echo "[$(date +'%Y-%m-%d %H:%M:%S')]"; }
 
-echo "$(_ts) [INFO] ===================================================================================="
 echo "$(_ts) [INFO] $CUSTOM_NAME v$CUSTOM_VERSION  (failover supervisor, pid $$)"
 echo "$(_ts) [INFO] Pools (${#POOLS[@]}): ${POOLS[*]}"
 echo "$(_ts) [INFO] Base args: ${ALPHA_BASE_ARGS[*]}"
 echo "$(_ts) [INFO] Failover: grace=${FAILOVER_GRACE_SEC}s dead=${FAILOVER_DEAD_SEC}s return=${FAILOVER_RETURN_SEC}s"
 echo "$(_ts) [INFO] Buffer: $BUFFER_FILE (${BUFFER_LINES} lines cap)"
-echo "$(_ts) [INFO] ===================================================================================="
 
 miner_pid=""
 writer_pid=""
