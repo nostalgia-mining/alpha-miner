@@ -35,9 +35,11 @@ exec > >(exec tee -a "$LOG") 2>&1
 # Timestamp helper
 _ts() { echo "[$(date +'%Y-%m-%d %H:%M:%S')]"; }
 
-echo "--------------------------------------------------------------------"
-echo "AlphaMiner PEARL v${CUSTOM_VERSION} -- HiveOS Wrapper by nostalgia"
-echo "--------------------------------------------------------------------"
+_TITLE="AlphaMiner PEARL v${CUSTOM_VERSION} -- HiveOS Wrapper by nostalgia"
+_DASH=$(printf '%*s' "${#_TITLE}" '' | tr ' ' '-')
+echo "$_DASH"
+echo "$_TITLE"
+echo "$_DASH"
 
 # ============================================================================
 # Read miner.conf (written by h-config.sh on each HiveOS start)
