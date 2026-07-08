@@ -188,8 +188,8 @@ process_line() {
             if [[ -n "$job_id" && "$job_id" != "$LAST_JOB_ID" ]]; then
                 LAST_JOB_ID="$job_id"
                 local _line
-                printf -v _line "[%s] GPU %-2s %-32s diff=%-16s job=%s" \
-                    "$hhmm" "$gpu_idx" "New job generation=$gen" "$diff" "$job_id"
+                printf -v _line "[%s] [INFO] New job generation=%-6s diff=%-17s job=%s" \
+                    "$hhmm" "$gen" "$diff" "$job_id"
                 log_print "$_line"
             fi
         fi

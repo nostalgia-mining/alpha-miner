@@ -168,6 +168,8 @@ _launch() {
 }
 
 if [[ "$ENABLE_STATS" == "1" ]]; then
+    # Clear stale version file before starting event printer so it waits for fresh detection
+    rm -f "$BUFFER_DIR/miner-version"
     _launch "$EVENTS_SCRIPT" "$EVENTS_PIDFILE" "Event printer"
     _launch "$STATS_SCRIPT"  "$STATS_PIDFILE"  "Stats table"
 else
