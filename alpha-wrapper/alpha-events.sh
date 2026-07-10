@@ -271,7 +271,8 @@ process_line() {
             
             if [[ -n "$hit_ts_ms" && "$hit_ts_ms" =~ ^[0-9]+$ ]]; then
                 ping_ms=$(( accepted_ms - hit_ts_ms ))
-                (( ping_ms < 0 || ping_ms > 60000 )) && ping_ms=0
+                # Sanity cap: > 10s almost certainly a queue mismatch
+                (( ping_ms < 0 || ping_ms > 10000 )) && ping_ms=0
             fi
         fi
         
