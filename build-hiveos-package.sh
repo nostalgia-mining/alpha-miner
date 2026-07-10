@@ -42,6 +42,9 @@ fi
 # Known SHA256 hashes (add new versions here as they become known)
 declare -A KNOWN_SHA256=(
     ["1.8.3"]="927f50f63343bb63b9e6eeed77d2959200e2c1df2022c84f47a117af50475fdb"
+    ["1.8.5"]="930a01e74ed403c7f649a592c71e25c15b3c366272d50ac85ca7e0aeae8e1188"
+    ["1.8.6"]="4d200e1d710f8095d5d5aa1e944689b1972dbc84a61190a07efeaa327339e126"
+    ["1.8.7"]="e15a74d9dc09aa8dde98c781a4f3a8971fccf58ec1f0f254e3b9fe69afc0ff07"
 )
 
 echo "================================================"
